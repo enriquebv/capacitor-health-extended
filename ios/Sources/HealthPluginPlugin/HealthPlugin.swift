@@ -82,8 +82,8 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func queryLatestSample(_ call: CAPPluginCall) {
-        guard let dataTypeString = call.getString("dataType") else {
-            call.reject("Missing dataType parameter")
+        guard aggregateTypeToHKQuantityType(dataTypeString) != nil else {
+            call.reject("Invalid data type")
             return
         }
 
