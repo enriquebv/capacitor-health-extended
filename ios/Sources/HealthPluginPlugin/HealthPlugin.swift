@@ -16,7 +16,8 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "requestHealthPermissions", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "openAppleHealthSettings", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "queryAggregated", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "queryWorkouts", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "queryWorkouts", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "queryLatestSample", returnType: CAPPluginReturnPromise)
     ]
     
     let healthStore = HKHealthStore()
@@ -27,9 +28,33 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
     }
     
     @objc func checkHealthPermissions(_ call: CAPPluginCall) {
-        call.reject("not implemented")
+        guard let permissions = call.getArray("permissions") as? [String] else {
+            call.reject("Invalid permissions format")
+            return
+        }
+
+        var result: [String: String] = [:]
+
+        for permission in permissions {
+            let hkTypes = permissionToHKObjectType(permission)
+            for type in hkTypes {
+                let status = healthStore.authorizationStatus(for: type)
+
+                switch status {
+                case .notDetermined:
+                    result[permission] = "notDetermined"
+                case .sharingDenied:
+                    result[permission] = "denied"
+                case .sharingAuthorized:
+                    result[permission] = "authorized"
+                @unknown default:
+                    result[permission] = "unknown"
+                }
+            }
+        }
+
+        call.resolve(["permissions": result])
     }
-    
     
     @objc func requestHealthPermissions(_ call: CAPPluginCall) {
         guard let permissions = call.getArray("permissions") as? [String] else {
@@ -55,6 +80,66 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
             }
         }
     }
+
+    @objc func queryLatestSample(_ call: CAPPluginCall) {
+        guard let dataTypeString = call.getString("dataType") else {
+            call.reject("Missing dataType parameter")
+            return
+        }
+
+        let quantityType: HKQuantityType? = {
+            switch dataTypeString {
+            case "heart-rate":
+                return HKObjectType.quantityType(forIdentifier: .heartRate)
+            case "weight":
+                return HKObjectType.quantityType(forIdentifier: .bodyMass)
+            case "steps":
+                return HKObjectType.quantityType(forIdentifier: .stepCount)
+            default:
+                return nil
+            }
+        }()
+
+        guard let type = quantityType else {
+            call.reject("Invalid or unsupported data type")
+            return
+        }
+
+        let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: false)
+        let predicate = HKQuery.predicateForSamples(withStart: Date.distantPast, end: Date(), options: .strictEndDate)
+
+        let query = HKSampleQuery(sampleType: type, predicate: predicate, limit: 1, sortDescriptors: [sortDescriptor]) { _, samples, error in
+            
+            print("Samples count for \\(dataTypeString):", samples?.count ?? 0)
+            
+            guard let quantitySample = samples?.first as? HKQuantitySample else {
+                if let error = error {
+                    call.reject("Error fetching latest sample", "NO_SAMPLE", error)
+                } else {
+                    call.reject("No sample found", "NO_SAMPLE")
+                }
+                return
+            }
+
+            var unit: HKUnit = .count()
+            if dataTypeString == "heart-rate" {
+                unit = HKUnit.count().unitDivided(by: HKUnit.minute())
+            } else if dataTypeString == "weight" {
+                unit = .gramUnit(with: .kilo)
+            }
+
+            let value = quantitySample.quantity.doubleValue(for: unit)
+            let timestamp = quantitySample.startDate.timeIntervalSince1970 * 1000
+
+            call.resolve([
+                "value": value,
+                "timestamp": timestamp,
+                "unit": unit.unitString
+            ])
+        }
+
+        healthStore.execute(query)
+    }
     
     @objc func openAppleHealthSettings(_ call: CAPPluginCall) {
         if let url = URL(string: UIApplication.openSettingsURLString) {
@@ -72,6 +157,8 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
         switch permission {
         case "READ_STEPS":
             return [HKObjectType.quantityType(forIdentifier: .stepCount)].compactMap{$0}
+        case "READ_WEIGHT":
+            return [HKObjectType.quantityType(forIdentifier: .bodyMass)].compactMap{$0}
         case "READ_ACTIVE_CALORIES":
             return [HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)].compactMap{$0}
         case "READ_WORKOUTS":
@@ -100,6 +187,10 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
             return HKObjectType.quantityType(forIdentifier: .stepCount)
         case "active-calories":
             return HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)
+        case "heart-rate":
+            return HKObjectType.quantityType(forIdentifier: .heartRate)
+        case "weight":
+            return HKObjectType.quantityType(forIdentifier: .bodyMass)
         default:
             return nil
         }
@@ -140,10 +231,25 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
                 return
             }
             
+            guard let dataType = aggregateTypeToHKQuantityType(dataTypeString) else {
+                call.reject("Invalid data type")
+                return
+            }
+
+            let options: HKStatisticsOptions = {
+                switch dataType.identifier {
+                case HKQuantityTypeIdentifier.heartRate.rawValue,
+                     HKQuantityTypeIdentifier.bodyMass.rawValue:
+                    return .discreteAverage
+                default:
+                    return .cumulativeSum
+                }
+            }()
+
             let query = HKStatisticsCollectionQuery(
                 quantityType: dataType,
                 quantitySamplePredicate: predicate,
-                options: [.cumulativeSum],
+                options: options,
                 anchorDate: startDate,
                 intervalComponents: interval
             )

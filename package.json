@@ -1,7 +1,7 @@
 {
-  "name": "capacitor-health",
-  "version": "0.0.14",
-  "description": "Capacitor plugin for Apple Health and Google Health Connect",
+  "name": "capacitor-health-extended",
+  "version": "0.0.1",
+  "description": "Capacitor plugin for Apple HealthKit and Google Health Connect Platform",
   "main": "dist/plugin.cjs.js",
   "module": "dist/esm/index.js",
   "types": "dist/esm/index.d.ts",
@@ -15,19 +15,24 @@
     "Package.swift",
     "CapacitorHealth.podspec"
   ],
-  "author": "Martin",
+  "author": "Flomentum Solutions, LLC",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/mley/capacitor-health.git"
+    "url": "git+https://github.com/MBRO95/capacitor-health-extended.git"
   },
   "bugs": {
-    "url": "https://github.com/mley/capacitor-health/issues"
+    "url": "https://github.com/MBRO95/capacitor-health-extended/issues"
   },
   "keywords": [
     "capacitor",
     "plugin",
-    "native"
+    "native",
+    "health",
+    "healthkit",
+    "healthconnect",
+    "exercise",
+    "biometrics"
   ],
   "scripts": {
     "verify": "npm run verify:ios && npm run verify:android && npm run verify:web",

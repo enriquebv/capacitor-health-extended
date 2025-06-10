@@ -63,6 +63,10 @@ enum class CapHealthPermission {
             strings = ["android.permission.health.READ_STEPS"]
         ),
         Permission(
+            alias = "READ_WEIGHT",
+            strings = ["android.permission.health.READ_WEIGHT"]
+        ),
+        Permission(
             alias = "READ_WORKOUTS",
             strings = ["android.permission.health.READ_EXERCISE"]
         ),
@@ -141,7 +145,8 @@ class HealthPlugin : Plugin() {
         Pair(CapHealthPermission.READ_ACTIVE_CALORIES, "android.permission.health.READ_ACTIVE_CALORIES_BURNED"),
         Pair(CapHealthPermission.READ_TOTAL_CALORIES, "android.permission.health.READ_TOTAL_CALORIES_BURNED"),
         Pair(CapHealthPermission.READ_DISTANCE, "android.permission.health.READ_DISTANCE"),
-        Pair(CapHealthPermission.READ_STEPS, "android.permission.health.READ_STEPS")
+        Pair(CapHealthPermission.READ_STEPS, "android.permission.health.READ_STEPS"),
+        Pair(CapHealthPermission.READ_WEIGHT, "android.permission.health.READ_WEIGHT")
     )
 
     // Check if a set of permissions are granted
@@ -256,6 +261,79 @@ class HealthPlugin : Plugin() {
             ) { it?.inKilocalories }
             "distance" -> metricAndMapper("distance", CapHealthPermission.READ_DISTANCE, DistanceRecord.DISTANCE_TOTAL) { it?.inMeters }
             else -> throw RuntimeException("Unsupported dataType: $dataType")
+        }
+    }
+
+    @PluginMethod
+    fun queryLatestSample(call: PluginCall) {
+        val dataType = call.getString("dataType")
+        if (dataType == null) {
+            call.reject("Missing required parameter: dataType")
+            return
+        }
+
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val result = when (dataType) {
+                    "heart-rate" -> readLatestHeartRate()
+                    "weight" -> readLatestWeight()
+                    "steps" -> readLatestSteps()
+                    else -> {
+                        call.reject("Unsupported data type: $dataType")
+                        return@launch
+                    }
+                }
+                call.resolve(result)
+            } catch (e: Exception) {
+                Log.e(tag, "Error fetching latest $dataType", e)
+                call.reject("Error fetching latest $dataType: ${e.message}")
+            }
+        }
+    }
+
+    private suspend fun readLatestHeartRate(): JSObject {
+        if (!hasPermission(CapHealthPermission.READ_HEART_RATE)) {
+            throw Exception("Permission for heart rate not granted")
+        }
+        val request = ReadRecordsRequest(HeartRateRecord::class, TimeRangeFilter.after(Instant.EPOCH), limit = 1)
+        val result = healthConnectClient.readRecords(request)
+        val record = result.records.firstOrNull() ?: throw Exception("No heart rate data found")
+
+        val lastSample = record.samples.lastOrNull()
+        return JSObject().apply {
+            put("timestamp", lastSample?.time?.toString() ?: "")
+            put("value", lastSample?.beatsPerMinute ?: 0)
+        }
+    }
+
+    private suspend fun readLatestWeight(): JSObject {
+        if (!hasPermission(CapHealthPermission.READ_WEIGHT)) {
+            throw Exception("Permission for weight not granted")
+        }
+        val request = ReadRecordsRequest(
+            androidx.health.connect.client.records.WeightRecord::class,
+            TimeRangeFilter.after(Instant.EPOCH),
+            limit = 1
+        )
+        val result = healthConnectClient.readRecords(request)
+        val record = result.records.firstOrNull() ?: throw Exception("No weight data found")
+        return JSObject().apply {
+            put("timestamp", record.time?.toString() ?: "")
+            put("value", record.weight?.inKilograms ?: 0.0)
+        }
+    }
+
+    private suspend fun readLatestSteps(): JSObject {
+        if (!hasPermission(CapHealthPermission.READ_STEPS)) {
+            throw Exception("Permission for steps not granted")
+        }
+        val request = ReadRecordsRequest(StepsRecord::class, TimeRangeFilter.after(Instant.EPOCH), limit = 1)
+        val result = healthConnectClient.readRecords(request)
+        val record = result.records.firstOrNull() ?: throw Exception("No step data found")
+        return JSObject().apply {
+            put("startDate", record.startTime?.toString() ?: "")
+            put("endDate", record.endTime?.toString() ?: "")
+            put("value", record.count)
         }
     }
 
@@ -388,6 +466,18 @@ class HealthPlugin : Plugin() {
 
         CoroutineScope(Dispatchers.IO).launch {
             try {
+                // Add: check permissions for heart rate and route before loop
+                val hasHeartRatePermission = hasPermission(CapHealthPermission.READ_HEART_RATE)
+                val hasRoutePermission = hasPermission(CapHealthPermission.READ_ROUTE)
+
+                // Log warning if requested data but permission not granted
+                if (includeHeartRate && !hasHeartRatePermission) {
+                    Log.w(tag, "Requested heart rate data but permission not granted.")
+                }
+                if (includeRoute && !hasRoutePermission) {
+                    Log.w(tag, "Requested route data but permission not granted.")
+                }
+
                 // Query workouts (exercise sessions)
                 val response = healthConnectClient.readRecords(request)
 
@@ -425,17 +515,21 @@ class HealthPlugin : Plugin() {
 
                     addWorkoutMetric(workout, workoutObject, getMetricAndMapper("distance"))
 
-                    if (includeHeartRate && hasPermission(CapHealthPermission.READ_HEART_RATE)) {
+                    if (includeHeartRate && hasHeartRatePermission) {
                         // Query and add heart rate data if requested
                         val heartRates =
                             queryHeartRateForWorkout(workout.startTime, workout.endTime)
-                        workoutObject.put("heartRate", heartRates)
+                        if (heartRates.length() > 0) {
+                            workoutObject.put("heartRate", heartRates)
+                        }
                     }
 
-                    if (includeRoute && workout.exerciseRouteResult is ExerciseRouteResult.Data) {
+                    if (includeRoute && hasRoutePermission && workout.exerciseRouteResult is ExerciseRouteResult.Data) {
                         val route =
                             queryRouteForWorkout(workout.exerciseRouteResult as ExerciseRouteResult.Data)
-                        workoutObject.put("route", route)
+                        if (route.length() > 0) {
+                            workoutObject.put("route", route)
+                        }
                     }
 
                     workoutsArray.put(workoutObject)
@@ -456,29 +550,34 @@ class HealthPlugin : Plugin() {
         jsWorkout: JSObject,
         metricAndMapper: MetricAndMapper,
     ): Boolean {
-
-        if (hasPermission(metricAndMapper.permission)) {
-            try {
-                val request = AggregateRequest(
-                    setOf(metricAndMapper.metric),
-                    TimeRangeFilter.Companion.between(workout.startTime, workout.endTime),
-                    emptySet()
-                )
-                val aggregation = healthConnectClient.aggregate(request)
-                val value = metricAndMapper.getValue(aggregation)
-                if(value != null) {
-                    jsWorkout.put(metricAndMapper.name, value)
-                    return true
-                }
-            } catch (e: Exception) {
-                Log.e(tag, "Error", e)
+        if (!hasPermission(metricAndMapper.permission)) {
+            Log.w(tag, "Missing permission for metric: ${metricAndMapper.name}")
+            return false
+        }
+        try {
+            val request = AggregateRequest(
+                setOf(metricAndMapper.metric),
+                TimeRangeFilter.Companion.between(workout.startTime, workout.endTime),
+                emptySet()
+            )
+            val aggregation = healthConnectClient.aggregate(request)
+            val value = metricAndMapper.getValue(aggregation)
+            if(value != null) {
+                jsWorkout.put(metricAndMapper.name, value)
+                return true
             }
+        } catch (e: Exception) {
+            Log.e(tag, "Error", e)
         }
         return false;
     }
 
 
     private suspend fun queryHeartRateForWorkout(startTime: Instant, endTime: Instant): JSArray {
+        if (!hasPermission(CapHealthPermission.READ_HEART_RATE)) {
+            return JSArray()
+        }
+
         val request =
             ReadRecordsRequest(HeartRateRecord::class, TimeRangeFilter.between(startTime, endTime))
         val heartRateRecords = healthConnectClient.readRecords(request)
