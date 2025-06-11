@@ -302,7 +302,11 @@ class HealthPlugin : Plugin() {
         if (!hasPermission(CapHealthPermission.READ_HEART_RATE)) {
             throw Exception("Permission for heart rate not granted")
         }
-        val request = ReadRecordsRequest(HeartRateRecord::class, TimeRangeFilter.after(Instant.EPOCH), limit = 1)
+        val request = ReadRecordsRequest(
+            recordType = HeartRateRecord::class,
+            timeRangeFilter = TimeRangeFilter.after(Instant.EPOCH),
+            pageSize = 1
+        )
         val result = healthConnectClient.readRecords(request)
         val record = result.records.firstOrNull() ?: throw Exception("No heart rate data found")
 
@@ -318,9 +322,9 @@ class HealthPlugin : Plugin() {
             throw Exception("Permission for weight not granted")
         }
         val request = ReadRecordsRequest(
-            androidx.health.connect.client.records.WeightRecord::class,
-            TimeRangeFilter.after(Instant.EPOCH),
-            limit = 1
+            recordType = androidx.health.connect.client.records.WeightRecord::class,
+            timeRangeFilter = TimeRangeFilter.after(Instant.EPOCH),
+            pageSize = 1
         )
         val result = healthConnectClient.readRecords(request)
         val record = result.records.firstOrNull() ?: throw Exception("No weight data found")
@@ -334,7 +338,11 @@ class HealthPlugin : Plugin() {
         if (!hasPermission(CapHealthPermission.READ_STEPS)) {
             throw Exception("Permission for steps not granted")
         }
-        val request = ReadRecordsRequest(StepsRecord::class, TimeRangeFilter.after(Instant.EPOCH), limit = 1)
+        val request = ReadRecordsRequest(
+            recordType = StepsRecord::class,
+            timeRangeFilter = TimeRangeFilter.after(Instant.EPOCH),
+            pageSize = 1
+        )
         val result = healthConnectClient.readRecords(request)
         val record = result.records.firstOrNull() ?: throw Exception("No step data found")
         return JSObject().apply {
