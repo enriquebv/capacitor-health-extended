@@ -28,6 +28,7 @@
 package com.[YOUR_ORGANIZATION].[YOUR_APP...]
 
 import android.os.Bundle
+import android.util.Log
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.appcompat.app.AppCompatActivity
@@ -38,8 +39,15 @@ class PermissionsRationaleActivity : AppCompatActivity() {
     val webView = WebView(this).apply {
       webViewClient = object : WebViewClient() {
         override fun shouldOverrideUrlLoading(view: WebView, request: android.webkit.WebResourceRequest) = false
+        override fun onReceivedError(
+            view: WebView,
+            request: android.webkit.WebResourceRequest,
+            error: android.webkit.WebResourceError
+        ) {
+            Log.e("WebView", "Failed to load: ${error.description}")
+        }
       }
-      loadUrl("https://flomentumsolutions.com/privacy-policy") // Replace with relevant URL
+      loadUrl("https://flomentumsolutions.com/privacy-policy")
     }
     setContentView(webView)
   }

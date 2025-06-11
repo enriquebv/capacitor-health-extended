@@ -31,6 +31,7 @@ npx cap sync
     </queries>
 
     <!-- Declare permissions you’ll request -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.health.READ_STEPS"/>
     <uses-permission android:name="android.permission.health.READ_EXERCISE"/>
     <uses-permission android:name="android.permission.health.READ_WEIGHT" />
