@@ -35,47 +35,55 @@ import android.webkit.WebViewClient
 import androidx.appcompat.app.AppCompatActivity
 
 class PermissionsRationaleActivity : AppCompatActivity() {
-  private lateinit var webView: WebView
+    private lateinit var webView: WebView
 
-  override fun onCreate(savedInstanceState: Bundle?) {
-    super.onCreate(savedInstanceState)
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
 
-    supportActionBar?.apply {
-      title = "Privacy Policy"
-      setDisplayHomeAsUpEnabled(true)
-    }
-
-    webView = WebView(this).apply {
-      settings.javaScriptEnabled = true
-      webChromeClient = WebChromeClient()
-      webViewClient = object : WebViewClient() {
-        override fun shouldOverrideUrlLoading(view: WebView, request: android.webkit.WebResourceRequest) = false
-        override fun onReceivedError(
-          view: WebView,
-          request: android.webkit.WebResourceRequest,
-          error: android.webkit.WebResourceError
-        ) {
-          Log.e("WebView", "Failed to load: ${error.description}")
+        supportActionBar?.apply {
+            title = "Privacy Policy"
+            setDisplayHomeAsUpEnabled(true)
         }
-      }
-      loadUrl("https://flomentumsolutions.com/privacy-policy")
+
+        webView = WebView(this).apply {
+            settings.apply {
+                javaScriptEnabled = true
+                domStorageEnabled = true
+                useWideViewPort = true
+                loadWithOverviewMode = true
+            }
+            webChromeClient = WebChromeClient()
+            webViewClient = object : WebViewClient() {
+                override fun shouldOverrideUrlLoading(view: WebView, request: android.webkit.WebResourceRequest) = false
+                override fun onReceivedError(
+                    view: WebView,
+                    request: android.webkit.WebResourceRequest,
+                    error: android.webkit.WebResourceError
+                ) {
+                    Log.e("WebView", "Failed to load: ${error.description}")
+                }
+                override fun onPageFinished(view: WebView, url: String) {
+                    Log.d("WebView", "Loaded: $url")
+                }
+            }
+            loadUrl("https://flomentumsolutions.com/privacy-policy")
+        }
+
+        setContentView(webView)
     }
 
-    setContentView(webView)
-  }
-
-  // Toolbar Up button behavior
-  override fun onSupportNavigateUp(): Boolean {
-    finish()
-    return true
-  }
-
-  // Device back button behavior
-  override fun onBackPressed() {
-    if (webView.canGoBack()) {
-      webView.goBack()
-    } else {
-      super.onBackPressed()
+    // Toolbar Up button behavior
+    override fun onSupportNavigateUp(): Boolean {
+        finish()
+        return true
     }
-  }
+
+    // Device back button behavior
+    override fun onBackPressed() {
+        if (webView.canGoBack()) {
+            webView.goBack()
+        } else {
+            super.onBackPressed()
+        }
+    }
 }

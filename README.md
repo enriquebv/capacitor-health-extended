@@ -67,6 +67,32 @@ npx cap sync
     </activity-alias>
 ```
 
+* Android Manifest in application tag for secure WebView content
+```xml
+    <!-- Configure secure WebView and allow HTTPS loading -->
+    <application
+        android:usesCleartextTraffic="false"
+        android:networkSecurityConfig="@xml/network_security_config">
+        ...
+    </application>
+```
+
+* Create `res/xml/network_security_config.xml` with:
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+  <base-config cleartextTrafficPermitted="false">
+    <trust-anchors>
+      <certificates src="system"/>
+    </trust-anchors>
+  </base-config>
+</network-security-config>
+```
+
+This setup ensures your WebView will load HTTPS content securely and complies with Android's default network security policy.
+```
+
 ## API
 
 <docgen-index>
