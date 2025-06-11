@@ -66,24 +66,51 @@ class HealthPlugin : Plugin() {
     private lateinit var healthConnectClient: HealthConnectClient
     private var available: Boolean = false
 
-    private lateinit var permissionsLauncher: ActivityResultLauncher<Set<HealthPermission>>
+    private lateinit var permissionsLauncher: ActivityResultLauncher<Set<String>>
+
+    private val permissionMapping: Map<CapHealthPermission, String> = mapOf(
+        CapHealthPermission.READ_STEPS to HealthPermission.getReadPermission(StepsRecord::class),
+        CapHealthPermission.READ_HEART_RATE to HealthPermission.getReadPermission(HeartRateRecord::class),
+        CapHealthPermission.READ_WEIGHT to HealthPermission.getReadPermission(WeightRecord::class),
+        CapHealthPermission.READ_ACTIVE_CALORIES to HealthPermission.getReadPermission(ActiveCaloriesBurnedRecord::class),
+        CapHealthPermission.READ_TOTAL_CALORIES to HealthPermission.getReadPermission(TotalCaloriesBurnedRecord::class),
+        CapHealthPermission.READ_DISTANCE to HealthPermission.getReadPermission(DistanceRecord::class),
+        CapHealthPermission.READ_WORKOUTS to HealthPermission.getReadPermission(ExerciseSessionRecord::class)
+    )
 
     override fun load() {
         super.load()
+        initializePermissionLauncher()
+    }
+
+    private fun initializePermissionLauncher() {
         permissionsLauncher = bridge.activity.registerForActivityResult(
             PermissionController.createRequestPermissionResultContract()
-        ) { grantedPermissions ->
-            Log.i(tag, "Permissions callback: $grantedPermissions")
-            val context = requestPermissionContext.getAndSet(null) ?: return@registerForActivityResult
-            val result = JSObject().apply {
-                val perms = JSObject()
-                context.requestedPermissions.forEach { cap ->
-                    val hp = permissionMapping[cap]
-                    perms.put(cap.name, grantedPermissions.contains(hp))
-                }
-                put("permissions", perms)
-            }
-            context.pluginCal.resolve(result)
+        ) { grantedPermissions: Set<String> ->
+            onPermissionsResult(grantedPermissions)
+        }
+    }
+
+    private fun onPermissionsResult(grantedPermissions: Set<String>) {
+        Log.i(tag, "Permissions callback: $grantedPermissions")
+        val context = requestPermissionContext.getAndSet(null) ?: return
+
+        val result = buildPermissionsResult(context, grantedPermissions)
+        context.pluginCal.resolve(result)
+    }
+
+    private fun buildPermissionsResult(
+        context: RequestPermissionContext,
+        grantedPermissions: Set<String>
+    ): JSObject {
+        val perms = JSObject()
+        context.requestedPermissions.forEach { cap ->
+            val hp = permissionMapping[cap]
+            val isGranted = hp != null && grantedPermissions.contains(hp)
+            perms.put(cap.name, isGranted)
+        }
+        return JSObject().apply {
+            put("permissions", perms)
         }
     }
 
@@ -105,16 +132,6 @@ class HealthPlugin : Plugin() {
         result.put("available", available)
         call.resolve(result)
     }
-
-    private val permissionMapping: Map<CapHealthPermission, HealthPermission> = mapOf(
-        CapHealthPermission.READ_STEPS to HealthPermission.getReadPermission(StepsRecord::class),
-        CapHealthPermission.READ_HEART_RATE to HealthPermission.getReadPermission(HeartRateRecord::class),
-        CapHealthPermission.READ_WEIGHT to HealthPermission.getReadPermission(WeightRecord::class),
-        CapHealthPermission.READ_ACTIVE_CALORIES to HealthPermission.getReadPermission(ActiveCaloriesBurnedRecord::class),
-        CapHealthPermission.READ_TOTAL_CALORIES to HealthPermission.getReadPermission(TotalCaloriesBurnedRecord::class),
-        CapHealthPermission.READ_DISTANCE to HealthPermission.getReadPermission(DistanceRecord::class),
-        CapHealthPermission.READ_WORKOUTS to HealthPermission.getReadPermission(ExerciseSessionRecord::class)
-    )
 
     // Helper to ensure client is initialized
     private fun ensureClientInitialized(call: PluginCall): Boolean {
@@ -151,7 +168,7 @@ class HealthPlugin : Plugin() {
 
     private fun grantedPermissionResult(
         requestPermissions: Set<CapHealthPermission>,
-        grantedPermissions: Set<HealthPermission>
+        grantedPermissions: Set<String>
     ): JSObject {
         val readPermissions = JSObject()
         for (permission in requestPermissions) {
@@ -177,7 +194,7 @@ class HealthPlugin : Plugin() {
             ?.mapNotNull { CapHealthPermission.from(it) }
             ?.toSet() ?: return call.reject("Provide permissions array.")
 
-        val hcPermissions: Set<HealthPermission> = requestedCaps
+        val hcPermissions: Set<String> = requestedCaps
             .mapNotNull { permissionMapping[it] }
             .toSet()
 
