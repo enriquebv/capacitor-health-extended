@@ -23,7 +23,7 @@ apply plugin: 'com.android.library'
 apply plugin: 'org.jetbrains.kotlin.android'
 
 android {
-    namespace "com.fit_up.health.capacitor"
+    namespace "com.flomentum.health.capacitor"
     compileSdk project.hasProperty('compileSdkVersion') ? rootProject.ext.compileSdkVersion : 34
     defaultConfig {
         minSdkVersion project.hasProperty('minSdkVersion') ? rootProject.ext.minSdkVersion : 26
@@ -61,7 +61,7 @@ dependencies {
     implementation project(':capacitor-android')
     implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
 
-    implementation 'androidx.health.connect:connect-client:1.1.0-rc01'
+    implementation 'androidx.health.connect:connect-client:1.1.0-rc02'
     implementation 'androidx.core:core-ktx:1.13.1'
 
     testImplementation "junit:junit:$junitVersion"

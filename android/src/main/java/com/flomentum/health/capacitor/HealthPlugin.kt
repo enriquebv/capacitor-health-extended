@@ -1,4 +1,4 @@
-package com.fit_up.health.capacitor
+package com.flomentum.health.capacitor
 
 import android.content.Intent
 import android.net.Uri
@@ -95,7 +95,7 @@ enum class CapHealthPermission {
 class HealthPlugin : Plugin() {
 
 
-    private val tag = "CapHealth"
+    private val tag = "HealthPlugin"
 
     private lateinit var healthConnectClient: HealthConnectClient
     private var available: Boolean = false
@@ -126,7 +126,7 @@ class HealthPlugin : Plugin() {
                 healthConnectClient = HealthConnectClient.getOrCreate(context)
                 available = true
             } catch (e: Exception) {
-                Log.e("CAP-HEALTH", "error health connect client", e)
+                Log.e(tag, "isHealthAvailable: Failed to initialize HealthConnectClient", e)
                 available = false
             }
         }
@@ -149,26 +149,32 @@ class HealthPlugin : Plugin() {
         Pair(CapHealthPermission.READ_WEIGHT, "android.permission.health.READ_WEIGHT")
     )
 
+    // Helper to ensure client is initialized
+    private fun ensureClientInitialized(call: PluginCall): Boolean {
+        if (!available) {
+            call.reject("Health Connect client not initialized. Call isHealthAvailable() first.")
+            return false
+        }
+        return true
+    }
+
     // Check if a set of permissions are granted
     @PluginMethod
     fun checkHealthPermissions(call: PluginCall) {
+        if (!ensureClientInitialized(call)) return
         val permissionsToCheck = call.getArray("permissions")
         if (permissionsToCheck == null) {
             call.reject("Must provide permissions to check")
             return
         }
 
-
         val permissions =
             permissionsToCheck.toList<String>().mapNotNull { CapHealthPermission.from(it) }.toSet()
 
-
         CoroutineScope(Dispatchers.IO).launch {
             try {
-
                 val grantedPermissions = healthConnectClient.permissionController.getGrantedPermissions()
                 val result = grantedPermissionResult(permissions, grantedPermissions)
-
                 call.resolve(result)
             } catch (e: Exception) {
                 call.reject("Checking permissions failed: ${e.message}")
@@ -200,6 +206,7 @@ class HealthPlugin : Plugin() {
     // Request a set of permissions from the user
     @PluginMethod
     fun requestHealthPermissions(call: PluginCall) {
+        if (!ensureClientInitialized(call)) return
         val permissionsToRequest = call.getArray("permissions")
         if (permissionsToRequest == null) {
             call.reject("Must provide permissions to request")
@@ -208,7 +215,6 @@ class HealthPlugin : Plugin() {
 
         val permissions = permissionsToRequest.toList<String>().mapNotNull { CapHealthPermission.from(it) }.toSet()
         val healthConnectPermissions = permissions.mapNotNull { permissionMapping[it] }.toSet()
-
 
         CoroutineScope(Dispatchers.IO).launch {
             try {
@@ -266,6 +272,7 @@ class HealthPlugin : Plugin() {
 
     @PluginMethod
     fun queryLatestSample(call: PluginCall) {
+        if (!ensureClientInitialized(call)) return
         val dataType = call.getString("dataType")
         if (dataType == null) {
             call.reject("Missing required parameter: dataType")
@@ -285,7 +292,7 @@ class HealthPlugin : Plugin() {
                 }
                 call.resolve(result)
             } catch (e: Exception) {
-                Log.e(tag, "Error fetching latest $dataType", e)
+                Log.e(tag, "queryLatestSample: Error fetching latest heart-rate", e)
                 call.reject("Error fetching latest $dataType: ${e.message}")
             }
         }
@@ -339,6 +346,7 @@ class HealthPlugin : Plugin() {
 
     @PluginMethod
     fun queryAggregated(call: PluginCall) {
+        if (!ensureClientInitialized(call)) return
         try {
             val startDate = call.getString("startDate")
             val endDate = call.getString("endDate")
@@ -360,19 +368,14 @@ class HealthPlugin : Plugin() {
                 else -> throw RuntimeException("Unsupported bucket: $bucket")
             }
 
-
             CoroutineScope(Dispatchers.IO).launch {
                 try {
-
                     val r = queryAggregatedMetric(metricAndMapper, TimeRangeFilter.between(startDateTime, endDateTime), period)
-
                     val aggregatedList = JSArray()
                     r.forEach { aggregatedList.put(it.toJs()) }
-
                     val finalResult = JSObject()
                     finalResult.put("aggregatedData", aggregatedList)
                     call.resolve(finalResult)
-
                 } catch (e: Exception) {
                     call.reject("Error querying aggregated data: ${e.message}")
                 }
@@ -447,6 +450,7 @@ class HealthPlugin : Plugin() {
 
     @PluginMethod
     fun queryWorkouts(call: PluginCall) {
+        if (!ensureClientInitialized(call)) return
         val startDate = call.getString("startDate")
         val endDate = call.getString("endDate")
         val includeHeartRate: Boolean = call.getBoolean("includeHeartRate", false) == true
@@ -472,10 +476,10 @@ class HealthPlugin : Plugin() {
 
                 // Log warning if requested data but permission not granted
                 if (includeHeartRate && !hasHeartRatePermission) {
-                    Log.w(tag, "Requested heart rate data but permission not granted.")
+                    Log.w(tag, "queryWorkouts: Heart rate requested but not permitted")
                 }
                 if (includeRoute && !hasRoutePermission) {
-                    Log.w(tag, "Requested route data but permission not granted.")
+                    Log.w(tag, "queryWorkouts: Route data requested but not permitted")
                 }
 
                 // Query workouts (exercise sessions)
@@ -551,7 +555,7 @@ class HealthPlugin : Plugin() {
         metricAndMapper: MetricAndMapper,
     ): Boolean {
         if (!hasPermission(metricAndMapper.permission)) {
-            Log.w(tag, "Missing permission for metric: ${metricAndMapper.name}")
+            Log.w(tag, "addWorkoutMetric: Skipped ${metricAndMapper.name} due to missing permission")
             return false
         }
         try {
@@ -567,7 +571,7 @@ class HealthPlugin : Plugin() {
                 return true
             }
         } catch (e: Exception) {
-            Log.e(tag, "Error", e)
+            Log.e(tag, "addWorkoutMetric: Failed to aggregate ${metricAndMapper.name}", e)
         }
         return false;
     }

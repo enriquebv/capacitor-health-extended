@@ -1,4 +1,4 @@
-package com.fit_up.health.capacitor
+package com.flomentum.health.capacitor
 
 import android.annotation.SuppressLint
 import android.app.Activity

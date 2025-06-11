@@ -9,7 +9,7 @@ Some parts, concepts and ideas are borrowed from [cordova-plugin-health](https:/
 ## Install
 
 ```bash
-npm install capacitor-health
+npm install capacitor-health-extended
 npx cap sync
 ```
 
@@ -28,7 +28,7 @@ npx cap sync
         <!-- For supported versions through Android 13, create an activity to show the rationale
     of Health Connect permissions once users click the privacy policy link. -->
         <activity
-            android:name="com.fit_up.health.capacitor.PermissionsRationaleActivity"
+            android:name="com.flomentum.health.capacitor.PermissionsRationaleActivity"
             android:exported="true">
             <intent-filter>
                 <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
@@ -40,7 +40,7 @@ npx cap sync
         <activity-alias
             android:name="ViewPermissionUsageActivity"
             android:exported="true"
-            android:targetActivity="com.fit_up.health.capacitor.PermissionsRationaleActivity"
+            android:targetActivity="com.flomentum.health.capacitor.PermissionsRationaleActivity"
             android:permission="android.permission.START_VIEW_PERMISSION_USAGE">
             <intent-filter>
                 <action android:name="android.intent.action.VIEW_PERMISSION_USAGE" />
