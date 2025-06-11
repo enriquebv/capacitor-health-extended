@@ -40,6 +40,11 @@ import java.util.Optional
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.jvm.optionals.getOrDefault
 
+override fun handleOnActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+  super.handleOnActivityResult(requestCode, resultCode, data)
+  Log.i(tag, "ActivityResult received: $requestCode / $resultCode")
+}
+
 enum class CapHealthPermission {
     READ_STEPS, READ_WORKOUTS, READ_HEART_RATE, READ_ROUTE, READ_ACTIVE_CALORIES, READ_TOTAL_CALORIES, READ_DISTANCE, READ_WEIGHT;
 
@@ -53,7 +58,6 @@ enum class CapHealthPermission {
         }
     }
 }
-
 
 @CapacitorPlugin(
     name = "HealthPlugin",
@@ -115,6 +119,7 @@ class HealthPlugin : Plugin() {
                 context.pluginCal.resolve(result)
             }
         }
+        Log.i(tag, "Activity is: ${activity::class.java.name}")
         permissionsLauncher = activity.registerForActivityResult(contract, callback)
         Log.i(tag, "Permission launcher initialized: $permissionsLauncher")
     }
