@@ -2,6 +2,7 @@ package com.flomentum.health.capacitor
 
 import android.content.Intent
 import android.util.Log
+import androidx.activity.result.ActivityResultLauncher
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.PermissionController
@@ -65,21 +66,24 @@ class HealthPlugin : Plugin() {
     private lateinit var healthConnectClient: HealthConnectClient
     private var available: Boolean = false
 
-    private lateinit var permissionsLauncher: androidx.activity.result.ActivityResultLauncher<Set<String>>
+    private lateinit var permissionsLauncher: ActivityResultLauncher<Set<HealthPermission>>
 
     override fun load() {
         super.load()
         permissionsLauncher = bridge.activity.registerForActivityResult(
             PermissionController.createRequestPermissionResultContract()
-        ) { grantedPermissions: Set<String> ->
+        ) { grantedPermissions ->
             Log.i(tag, "Permissions callback: $grantedPermissions")
-            requestPermissionContext.get()?.let { context ->
-                val result = JSObject().apply {
-                    put("permissions", JSArray(grantedPermissions))
+            val context = requestPermissionContext.getAndSet(null) ?: return@registerForActivityResult
+            val result = JSObject().apply {
+                val perms = JSObject()
+                context.requestedPermissions.forEach { cap ->
+                    val hp = permissionMapping[cap]
+                    perms.put(cap.name, grantedPermissions.contains(hp))
                 }
-                context.pluginCal.resolve(result)
-                requestPermissionContext.set(null)
+                put("permissions", perms)
             }
+            context.pluginCal.resolve(result)
         }
     }
 
@@ -102,7 +106,7 @@ class HealthPlugin : Plugin() {
         call.resolve(result)
     }
 
-    private val permissionMapping: Map<CapHealthPermission, String> = mapOf(
+    private val permissionMapping: Map<CapHealthPermission, HealthPermission> = mapOf(
         CapHealthPermission.READ_STEPS to HealthPermission.getReadPermission(StepsRecord::class),
         CapHealthPermission.READ_HEART_RATE to HealthPermission.getReadPermission(HeartRateRecord::class),
         CapHealthPermission.READ_WEIGHT to HealthPermission.getReadPermission(WeightRecord::class),
@@ -145,16 +149,19 @@ class HealthPlugin : Plugin() {
         }
     }
 
-    private fun grantedPermissionResult(requestPermissions: Set<CapHealthPermission>, grantedPermissions: Set<String>): JSObject {
-        // The grantedPermissions Set<String> contains the HealthPermission strings directly.
+    private fun grantedPermissionResult(
+        requestPermissions: Set<CapHealthPermission>,
+        grantedPermissions: Set<HealthPermission>
+    ): JSObject {
         val readPermissions = JSObject()
         for (permission in requestPermissions) {
-            val mappedPermission = permissionMapping[permission]
-            readPermissions.put(permission.name, mappedPermission in grantedPermissions)
+            val hp = permissionMapping[permission]!!
+            // Check by object equality
+            readPermissions.put(permission.name, grantedPermissions.contains(hp))
         }
-        val result = JSObject()
-        result.put("permissions", readPermissions)
-        return result
+        return JSObject().apply {
+            put("permissions", readPermissions)
+        }
     }
 
     data class RequestPermissionContext(val requestedPermissions: Set<CapHealthPermission>, val pluginCal: PluginCall)
@@ -165,28 +172,33 @@ class HealthPlugin : Plugin() {
     @PluginMethod
     fun requestHealthPermissions(call: PluginCall) {
         if (!ensureClientInitialized(call)) return
-        val permArray = call.getArray("permissions") ?: return call.reject("Must provide permissions to request")
-        val requestedCaps = permArray.toList<String>().mapNotNull { CapHealthPermission.from(it) }.toSet()
-        val hcPermissions = requestedCaps.mapNotNull { permissionMapping[it] }.toSet()
-        if (hcPermissions.isEmpty()) return call.reject("No valid permissions to request")
+        val requestedCaps = call.getArray("permissions")
+            ?.toList<String>()
+            ?.mapNotNull { CapHealthPermission.from(it) }
+            ?.toSet() ?: return call.reject("Provide permissions array.")
+
+        val hcPermissions: Set<HealthPermission> = requestedCaps
+            .mapNotNull { permissionMapping[it] }
+            .toSet()
+
+        if (hcPermissions.isEmpty()) {
+            return call.reject("No valid Health Connect permissions.")
+        }
 
         requestPermissionContext.set(RequestPermissionContext(requestedCaps, call))
 
-        // Show rationale screen if available
-        val rationaleIntent = Intent("androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE").apply {
-            setPackage("com.google.android.apps.healthdata")
-        }
-        if (rationaleIntent.resolveActivity(context.packageManager) != null) {
-            try { context.startActivity(rationaleIntent) }
-            catch (e: Exception) { Log.e(tag, "Rationale launch failed", e) }
-        } else {
-            Log.w(tag, "Health Connect rationale screen not found")
+        // Show rationale if available
+        context.packageManager?.let { pm ->
+            Intent("androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE").apply {
+                setPackage("com.google.android.apps.healthdata")
+            }.takeIf { pm.resolveActivity(it, 0) != null }
+                ?.also { context.startActivity(it) }
+                ?: Log.w(tag, "Health Connect rationale screen not found")
         }
 
-        // Only launch once on main thread
         CoroutineScope(Dispatchers.Main).launch {
-            Log.i(tag, "Launching permission request for: $hcPermissions")
             permissionsLauncher.launch(hcPermissions)
+            Log.i(tag, "Launched Health Connect permission request: $hcPermissions")
         }
     }
 
