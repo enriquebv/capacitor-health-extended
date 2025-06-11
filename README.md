@@ -23,44 +23,47 @@ npx cap sync
 
 ### Android
 
-* Android Manifest in application tag
+* Android Manifest in root tag right after opening manifest tag
 ```xml
-        <!-- For supported versions through Android 13, create an activity to show the rationale
-    of Health Connect permissions once users click the privacy policy link. -->
-        <activity
-            android:name="com.flomentum.health.capacitor.PermissionsRationaleActivity"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
-            </intent-filter>
-        </activity>
-
-        <!-- For versions starting Android 14, create an activity alias to show the rationale
-         of Health Connect permissions once users click the privacy policy link. -->
-        <activity-alias
-            android:name="ViewPermissionUsageActivity"
-            android:exported="true"
-            android:targetActivity="com.flomentum.health.capacitor.PermissionsRationaleActivity"
-            android:permission="android.permission.START_VIEW_PERMISSION_USAGE">
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW_PERMISSION_USAGE" />
-                <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
-            </intent-filter>
-        </activity-alias>
-```
-
-* Android Manifest in root tag
-```xml
+    <!-- Make Health Connect visible to detect installation -->
     <queries>
         <package android:name="com.google.android.apps.healthdata" />
     </queries>
-    
-    <uses-permission android:name="android.permission.health.READ_STEPS" />
-    <uses-permission android:name="android.permission.health.READ_ACTIVE_CALORIES_BURNED" />
-    <uses-permission android:name="android.permission.health.READ_DISTANCE" />
-    <uses-permission android:name="android.permission.health.READ_EXERCISE" />
-    <uses-permission android:name="android.permission.health.READ_EXERCISE_ROUTE" />
-    <uses-permission android:name="android.permission.health.READ_HEART_RATE" />
+
+    <!-- Declare permissions you’ll request -->
+    <uses-permission android:name="android.permission.health.READ_STEPS"/>
+    <uses-permission android:name="android.permission.health.READ_EXERCISE"/>
+    <uses-permission android:name="android.permission.health.READ_WEIGHT" />
+    <uses-permission android:name="android.permission.health.READ_DISTANCE"/>
+    <uses-permission android:name="android.permission.health.READ_ACTIVE_CALORIES_BURNED"/>
+    <uses-permission android:name="android.permission.health.READ_TOTAL_CALORIES_BURNED"/>
+    <uses-permission android:name="android.permission.health.READ_HEART_RATE"/>
+```
+
+
+* Android Manifest in application tag
+```xml
+    <!-- Handle Health Connect rationale (Android 13-) -->
+    <activity
+        android:name=".PermissionsRationaleActivity"
+        android:exported="true">
+        <intent-filter>
+            <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE"/>
+            <category android:name="android.intent.category.HEALTH_PERMISSIONS"/>
+        </intent-filter>
+    </activity>
+
+    <!-- Handle Android 14+ alias -->
+    <activity-alias
+        android:name="ViewPermissionUsageActivity"
+        android:exported="true"
+        android:targetActivity=".PermissionsRationaleActivity"
+        android:permission="android.permission.START_VIEW_PERMISSION_USAGE">
+        <intent-filter>
+            <action android:name="android.intent.action.VIEW_PERMISSION_USAGE"/>
+            <category android:name="android.intent.category.HEALTH_PERMISSIONS"/>
+        </intent-filter>
+    </activity-alias>
 ```
 
 ## API
