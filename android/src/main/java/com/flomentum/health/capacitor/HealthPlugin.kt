@@ -1,23 +1,18 @@
 package com.flomentum.health.capacitor
 
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.util.Log
-import androidx.activity.result.ActivityResultCallback
-import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContract
+import androidx.activity.result.ActivityResultLauncher
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.PermissionController
+import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.aggregate.AggregateMetric
 import androidx.health.connect.client.aggregate.AggregationResult
 import androidx.health.connect.client.aggregate.AggregationResultGroupedByPeriod
-import androidx.health.connect.client.records.ActiveCaloriesBurnedRecord
-import androidx.health.connect.client.records.DistanceRecord
-import androidx.health.connect.client.records.ExerciseRouteResult
-import androidx.health.connect.client.records.ExerciseSessionRecord
-import androidx.health.connect.client.records.HeartRateRecord
-import androidx.health.connect.client.records.StepsRecord
-import androidx.health.connect.client.records.TotalCaloriesBurnedRecord
+import androidx.health.connect.client.records.*
 import androidx.health.connect.client.request.AggregateGroupByPeriodRequest
 import androidx.health.connect.client.request.AggregateRequest
 import androidx.health.connect.client.request.ReadRecordsRequest
@@ -105,28 +100,23 @@ class HealthPlugin : Plugin() {
     private lateinit var healthConnectClient: HealthConnectClient
     private var available: Boolean = false
 
-    private lateinit var permissionsLauncher: ActivityResultLauncher<Set<String>>
+    private lateinit var permissionsLauncher: ActivityResultLauncher<Set<HealthPermission>>
+
     override fun load() {
         super.load()
-        Log.i(tag, "HealthPlugin loaded and initializing permission launcher")
-
-        val contract: ActivityResultContract<Set<String>, Set<String>> =
+        permissionsLauncher = activity.registerForActivityResult(
             PermissionController.createRequestPermissionResultContract()
-
-        val callback: ActivityResultCallback<Set<String>> = ActivityResultCallback { grantedPermissions ->
-            val context = requestPermissionContext.get()
-            if (context != null) {
-                val result = grantedPermissionResult(context.requestedPermissions, grantedPermissions)
-                context.pluginCal.resolve(result)
+        ) { grantedPermissions: Set<HealthPermission> ->
+            Log.i(tag, "Permissions callback (HealthPermission): $grantedPermissions")
+            requestPermissionContext.get()?.let {
+                val result = JSObject().apply {
+                    put("permissions", JSArray(grantedPermissions.map { it.permissionName.substringAfterLast('.') }))
+                }
+                it.pluginCal.resolve(result)
+                requestPermissionContext.set(null)
             }
         }
-        Log.i(tag, "Activity is: ${activity::class.java.name}")
-        permissionsLauncher = activity.registerForActivityResult(
-            RequestPermissionContract()
-        ) { isGranted ->
-            Log.i(tag, "ActivityResult callback hit - permissions granted: $isGranted")
-        }
-        Log.i(tag, "Permission launcher initialized: $permissionsLauncher")
+        Log.i(tag, "Permission launcher correctly registered")
     }
 
     // Check if Google Health Connect is available. Must be called before anything else
@@ -149,16 +139,15 @@ class HealthPlugin : Plugin() {
         call.resolve(result)
     }
 
-
-    private val permissionMapping = mapOf(
-        Pair(CapHealthPermission.READ_WORKOUTS, "android.permission.health.READ_EXERCISE"),
-        Pair(CapHealthPermission.READ_ROUTE, "android.permission.health.READ_EXERCISE_ROUTE"),
-        Pair(CapHealthPermission.READ_HEART_RATE, "android.permission.health.READ_HEART_RATE"),
-        Pair(CapHealthPermission.READ_ACTIVE_CALORIES, "android.permission.health.READ_ACTIVE_CALORIES_BURNED"),
-        Pair(CapHealthPermission.READ_TOTAL_CALORIES, "android.permission.health.READ_TOTAL_CALORIES_BURNED"),
-        Pair(CapHealthPermission.READ_DISTANCE, "android.permission.health.READ_DISTANCE"),
-        Pair(CapHealthPermission.READ_STEPS, "android.permission.health.READ_STEPS"),
-        Pair(CapHealthPermission.READ_WEIGHT, "android.permission.health.READ_WEIGHT")
+    private val permissionMapping: Map<CapHealthPermission, HealthPermission> = mapOf(
+        CapHealthPermission.READ_STEPS to HealthPermission.getReadPermission(StepsRecord::class),
+        CapHealthPermission.READ_HEART_RATE to HealthPermission.getReadPermission(HeartRateRecord::class),
+        CapHealthPermission.READ_WEIGHT to HealthPermission.getReadPermission(WeightRecord::class),
+        CapHealthPermission.READ_ACTIVE_CALORIES to HealthPermission.getReadPermission(ActiveCaloriesBurnedRecord::class),
+        CapHealthPermission.READ_TOTAL_CALORIES to HealthPermission.getReadPermission(TotalCaloriesBurnedRecord::class),
+        CapHealthPermission.READ_DISTANCE to HealthPermission.getReadPermission(DistanceRecord::class),
+        CapHealthPermission.READ_WORKOUTS to HealthPermission.getReadPermission(ExerciseSessionRecord::class),
+        CapHealthPermission.READ_ROUTE to HealthPermission.getReadPermission(ExerciseRouteRecord::class)
     )
 
     // Helper to ensure client is initialized
@@ -225,28 +214,43 @@ class HealthPlugin : Plugin() {
             return
         }
 
-        val permissions = permissionsToRequest.toList<String>().mapNotNull { CapHealthPermission.from(it) }.toSet()
-        val healthConnectPermissions = permissions.mapNotNull { permissionMapping[it] }.toSet()
+        val requested: List<String> =
+            call.getArray("permissions")?.toList<String>() ?: emptyList()
+
+        val hcPermissions: Set<HealthPermission> = requested.mapNotNull { key ->
+            CapHealthPermission.from(key)?.let { permissionMapping[it] }
+        }.toSet()
+
+        if (hcPermissions.isEmpty()) {
+            call.reject("No valid permissions to request")
+            return
+        }
 
         CoroutineScope(Dispatchers.Main).launch {
-            Log.i(tag, "Launching permission request for: $healthConnectPermissions")
+            Log.i(tag, "Launching permission request for: $hcPermissions")
             try {
-                requestPermissionContext.set(RequestPermissionContext(permissions, call))
-                permissionsLauncher.launch(healthConnectPermissions)
-                Log.i(tag, "Permission request launched")
-
-                // 🔍 Fallback: Try launching Health Connect directly
-                val intent = Intent("androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE").apply {
+                requestPermissionContext.set(
+                    RequestPermissionContext(
+                        requested.mapNotNull { CapHealthPermission.from(it) }.toSet(),
+                        call
+                    )
+                )
+                // Show Health Connect rationale screen if available before launching permission request
+                val rationaleIntent = Intent("androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE").apply {
                     setPackage("com.google.android.apps.healthdata")
                 }
-
-                if (intent.resolveActivity(context.packageManager) != null) {
-                    Log.i(tag, "Launching Health Connect app manually as fallback")
-                    context.startActivity(intent)
+                if (rationaleIntent.resolveActivity(context.packageManager) != null) {
+                    try {
+                        Log.i(tag, "Launching Health Connect rationale screen")
+                        context.startActivity(rationaleIntent)
+                    } catch (e: Exception) {
+                        Log.e(tag, "Failed to launch Health Connect rationale screen", e)
+                    }
                 } else {
-                    Log.e(tag, "Health Connect app not available or not installed")
+                    Log.w(tag, "Health Connect rationale screen not available")
                 }
-
+                permissionsLauncher.launch(hcPermissions)
+                Log.i(tag, "Permission request launched")
             } catch (e: Exception) {
                 call.reject("Permission request failed: ${e.message}")
                 requestPermissionContext.set(null)
