@@ -1,14 +1,10 @@
 package com.flomentum.health.capacitor
 
-import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.util.Log
-import androidx.activity.result.contract.ActivityResultContract
-import androidx.activity.result.ActivityResultLauncher
 import androidx.health.connect.client.HealthConnectClient
-import androidx.health.connect.client.PermissionController
 import androidx.health.connect.client.permission.HealthPermission
+import androidx.health.connect.client.PermissionController
 import androidx.health.connect.client.aggregate.AggregateMetric
 import androidx.health.connect.client.aggregate.AggregationResult
 import androidx.health.connect.client.aggregate.AggregationResultGroupedByPeriod
@@ -31,12 +27,11 @@ import java.time.Instant
 import java.time.LocalDateTime
 import java.time.Period
 import java.time.ZoneId
-import java.util.Optional
 import java.util.concurrent.atomic.AtomicReference
-import kotlin.jvm.optionals.getOrDefault
+import androidx.core.net.toUri
 
 enum class CapHealthPermission {
-    READ_STEPS, READ_WORKOUTS, READ_HEART_RATE, READ_ROUTE, READ_ACTIVE_CALORIES, READ_TOTAL_CALORIES, READ_DISTANCE, READ_WEIGHT;
+    READ_STEPS, READ_WORKOUTS, READ_HEART_RATE, READ_ACTIVE_CALORIES, READ_TOTAL_CALORIES, READ_DISTANCE, READ_WEIGHT;
 
     companion object {
         fun from(s: String): CapHealthPermission? {
@@ -52,72 +47,23 @@ enum class CapHealthPermission {
 @CapacitorPlugin(
     name = "HealthPlugin",
     permissions = [
-        Permission(
-            alias = "READ_STEPS",
-            strings = ["android.permission.health.READ_STEPS"]
-        ),
-        Permission(
-            alias = "READ_WEIGHT",
-            strings = ["android.permission.health.READ_WEIGHT"]
-        ),
-        Permission(
-            alias = "READ_WORKOUTS",
-            strings = ["android.permission.health.READ_EXERCISE"]
-        ),
-        Permission(
-            alias = "READ_DISTANCE",
-            strings = ["android.permission.health.READ_DISTANCE"]
-        ),
-        Permission(
-            alias = "READ_ACTIVE_CALORIES",
-            strings = ["android.permission.health.READ_ACTIVE_CALORIES_BURNED"]
-        ),
-        Permission(
-            alias = "READ_TOTAL_CALORIES",
-            strings = ["android.permission.health.READ_TOTAL_CALORIES_BURNED"]
-        ),
-        Permission(
-            alias = "READ_HEART_RATE",
-            strings = ["android.permission.health.READ_HEART_RATE"]
-        ),
-        Permission(
-            alias = "READ_ROUTE",
-            strings = ["android.permission.health.READ_EXERCISE_ROUTE"]
-        )
+        Permission(alias = "READ_STEPS", strings = ["android.permission.health.READ_STEPS"]),
+        Permission(alias = "READ_WEIGHT", strings = ["android.permission.health.READ_WEIGHT"]),
+        Permission(alias = "READ_WORKOUTS", strings = ["android.permission.health.READ_EXERCISE"]),
+        Permission(alias = "READ_DISTANCE", strings = ["android.permission.health.READ_DISTANCE"]),
+        Permission(alias = "READ_ACTIVE_CALORIES", strings = ["android.permission.health.READ_ACTIVE_CALORIES_BURNED"]),
+        Permission(alias = "READ_TOTAL_CALORIES", strings = ["android.permission.health.READ_TOTAL_CALORIES_BURNED"]),
+        Permission(alias = "READ_HEART_RATE", strings = ["android.permission.health.READ_HEART_RATE"])
     ]
 )
-class HealthPlugin : Plugin() {
 
-    @Suppress("DEPRECATION")
-    @Deprecated("Deprecated in Capacitor Plugin superclass")
-    override fun handleOnActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.handleOnActivityResult(requestCode, resultCode, data)
-        Log.i(tag, "ActivityResult received: requestCode=$requestCode resultCode=$resultCode")
-    }
+@Suppress("unused", "MemberVisibilityCanBePrivate")
+class HealthPlugin : Plugin() {
 
     private val tag = "HealthPlugin"
 
     private lateinit var healthConnectClient: HealthConnectClient
     private var available: Boolean = false
-
-    private lateinit var permissionsLauncher: ActivityResultLauncher<Set<HealthPermission>>
-
-    override fun load() {
-        super.load()
-        permissionsLauncher = activity.registerForActivityResult(
-            PermissionController.createRequestPermissionResultContract()
-        ) { grantedPermissions: Set<HealthPermission> ->
-            Log.i(tag, "Permissions callback (HealthPermission): $grantedPermissions")
-            requestPermissionContext.get()?.let {
-                val result = JSObject().apply {
-                    put("permissions", JSArray(grantedPermissions.map { it.permissionName.substringAfterLast('.') }))
-                }
-                it.pluginCal.resolve(result)
-                requestPermissionContext.set(null)
-            }
-        }
-        Log.i(tag, "Permission launcher correctly registered")
-    }
 
     // Check if Google Health Connect is available. Must be called before anything else
     @PluginMethod
@@ -133,21 +79,19 @@ class HealthPlugin : Plugin() {
             }
         }
 
-
         val result = JSObject()
         result.put("available", available)
         call.resolve(result)
     }
 
-    private val permissionMapping: Map<CapHealthPermission, HealthPermission> = mapOf(
+    private val permissionMapping: Map<CapHealthPermission, String> = mapOf(
         CapHealthPermission.READ_STEPS to HealthPermission.getReadPermission(StepsRecord::class),
         CapHealthPermission.READ_HEART_RATE to HealthPermission.getReadPermission(HeartRateRecord::class),
         CapHealthPermission.READ_WEIGHT to HealthPermission.getReadPermission(WeightRecord::class),
         CapHealthPermission.READ_ACTIVE_CALORIES to HealthPermission.getReadPermission(ActiveCaloriesBurnedRecord::class),
         CapHealthPermission.READ_TOTAL_CALORIES to HealthPermission.getReadPermission(TotalCaloriesBurnedRecord::class),
         CapHealthPermission.READ_DISTANCE to HealthPermission.getReadPermission(DistanceRecord::class),
-        CapHealthPermission.READ_WORKOUTS to HealthPermission.getReadPermission(ExerciseSessionRecord::class),
-        CapHealthPermission.READ_ROUTE to HealthPermission.getReadPermission(ExerciseRouteRecord::class)
+        CapHealthPermission.READ_WORKOUTS to HealthPermission.getReadPermission(ExerciseSessionRecord::class)
     )
 
     // Helper to ensure client is initialized
@@ -184,20 +128,15 @@ class HealthPlugin : Plugin() {
     }
 
     private fun grantedPermissionResult(requestPermissions: Set<CapHealthPermission>, grantedPermissions: Set<String>): JSObject {
+        // The grantedPermissions Set<String> contains the HealthPermission strings directly.
         val readPermissions = JSObject()
-        val grantedPermissionsWithoutPrefix = grantedPermissions.map { it.substringAfterLast('.') }
         for (permission in requestPermissions) {
-
-            readPermissions.put(
-                permission.name,
-                grantedPermissionsWithoutPrefix.contains(permissionMapping[permission]?.substringAfterLast('.'))
-            )
+            val mappedPermission = permissionMapping[permission]
+            readPermissions.put(permission.name, mappedPermission in grantedPermissions)
         }
-
         val result = JSObject()
         result.put("permissions", readPermissions)
         return result
-
     }
 
     data class RequestPermissionContext(val requestedPermissions: Set<CapHealthPermission>, val pluginCal: PluginCall)
@@ -215,9 +154,9 @@ class HealthPlugin : Plugin() {
         }
 
         val requested: List<String> =
-            call.getArray("permissions")?.toList<String>() ?: emptyList()
+            call.getArray("permissions")?.toList() ?: emptyList()
 
-        val hcPermissions: Set<HealthPermission> = requested.mapNotNull { key ->
+        val hcPermissions: Set<String> = requested.mapNotNull { key ->
             CapHealthPermission.from(key)?.let { permissionMapping[it] }
         }.toSet()
 
@@ -226,7 +165,20 @@ class HealthPlugin : Plugin() {
             return
         }
 
-        CoroutineScope(Dispatchers.Main).launch {
+        val permissionsLauncher = bridge.activity.registerForActivityResult(
+            PermissionController.createRequestPermissionResultContract()
+        ) { grantedPermissions: Set<String> ->
+            Log.i(tag, "Permissions callback: $grantedPermissions")
+            requestPermissionContext.get()?.let { context ->
+                val result = JSObject().apply {
+                    put("permissions", JSArray(grantedPermissions))
+                }
+                context.pluginCal.resolve(result)
+                requestPermissionContext.set(null)
+            }
+        }
+
+        CoroutineScope(Dispatchers.IO).launch {
             Log.i(tag, "Launching permission request for: $hcPermissions")
             try {
                 requestPermissionContext.set(
@@ -276,7 +228,7 @@ class HealthPlugin : Plugin() {
     @PluginMethod
     fun showHealthConnectInPlayStore(call: PluginCall) {
         val uri =
-            Uri.parse("https://play.google.com/store/apps/details?id=com.google.android.apps.healthdata")
+            "https://play.google.com/store/apps/details?id=com.google.android.apps.healthdata".toUri()
         val intent = Intent(Intent.ACTION_VIEW, uri)
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         context.startActivity(intent)
@@ -353,15 +305,15 @@ class HealthPlugin : Plugin() {
             throw Exception("Permission for weight not granted")
         }
         val request = ReadRecordsRequest(
-            recordType = androidx.health.connect.client.records.WeightRecord::class,
+            recordType = WeightRecord::class,
             timeRangeFilter = TimeRangeFilter.after(Instant.EPOCH),
             pageSize = 1
         )
         val result = healthConnectClient.readRecords(request)
         val record = result.records.firstOrNull() ?: throw Exception("No weight data found")
         return JSObject().apply {
-            put("timestamp", record.time?.toString() ?: "")
-            put("value", record.weight?.inKilograms ?: 0.0)
+            put("timestamp", record.time.toString())
+            put("value", record.weight.inKilograms)
         }
     }
 
@@ -377,8 +329,8 @@ class HealthPlugin : Plugin() {
         val result = healthConnectClient.readRecords(request)
         val record = result.records.firstOrNull() ?: throw Exception("No step data found")
         return JSObject().apply {
-            put("startDate", record.startTime?.toString() ?: "")
-            put("endDate", record.endTime?.toString() ?: "")
+            put("startDate", record.startTime.toString())
+            put("endDate", record.endTime.toString())
             put("value", record.count)
         }
     }
@@ -482,8 +434,9 @@ class HealthPlugin : Plugin() {
     }
 
     private suspend fun hasPermission(p: CapHealthPermission): Boolean {
-        return healthConnectClient.permissionController.getGrantedPermissions().map { it.substringAfterLast('.') }.toSet()
-            .contains(permissionMapping[p]?.substringAfterLast('.'))
+        val granted = healthConnectClient.permissionController.getGrantedPermissions()
+        val targetPermission = permissionMapping[p]
+        return granted.contains(targetPermission)
     }
 
 
@@ -509,16 +462,12 @@ class HealthPlugin : Plugin() {
 
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                // Add: check permissions for heart rate and route before loop
+                // Check permission for heart rate before loop
                 val hasHeartRatePermission = hasPermission(CapHealthPermission.READ_HEART_RATE)
-                val hasRoutePermission = hasPermission(CapHealthPermission.READ_ROUTE)
 
                 // Log warning if requested data but permission not granted
                 if (includeHeartRate && !hasHeartRatePermission) {
                     Log.w(tag, "queryWorkouts: Heart rate requested but not permitted")
-                }
-                if (includeRoute && !hasRoutePermission) {
-                    Log.w(tag, "queryWorkouts: Route data requested but not permitted")
                 }
 
                 // Query workouts (exercise sessions)
@@ -529,11 +478,8 @@ class HealthPlugin : Plugin() {
                 for (workout in response.records) {
                     val workoutObject = JSObject()
                     workoutObject.put("id", workout.metadata.id)
-                    workoutObject.put(
-                        "sourceName",
-                        Optional.ofNullable(workout.metadata.device?.model).getOrDefault("") +
-                                Optional.ofNullable(workout.metadata.device?.model).getOrDefault("")
-                    )
+                    val sourceModel = workout.metadata.device?.model ?: ""
+                    workoutObject.put("sourceName", sourceModel)
                     workoutObject.put("sourceBundleId", workout.metadata.dataOrigin.packageName)
                     workoutObject.put("startDate", workout.startTime.toString())
                     workoutObject.put("endDate", workout.endTime.toString())
@@ -567,11 +513,16 @@ class HealthPlugin : Plugin() {
                         }
                     }
 
-                    if (includeRoute && hasRoutePermission && workout.exerciseRouteResult is ExerciseRouteResult.Data) {
-                        val route =
-                            queryRouteForWorkout(workout.exerciseRouteResult as ExerciseRouteResult.Data)
-                        if (route.length() > 0) {
-                            workoutObject.put("route", route)
+                    /* Updated route logic for Health Connect RC02 */
+                    if (includeRoute) {
+                        if (!hasPermission(CapHealthPermission.READ_WORKOUTS)) {
+                            Log.w(tag, "queryWorkouts: Route requested but READ_WORKOUTS permission missing")
+                        } else if (workout.exerciseRouteResult is ExerciseRouteResult.Data) {
+                            val data = workout.exerciseRouteResult as ExerciseRouteResult.Data
+                            val routeJson = queryRouteForWorkout(data)
+                            if (routeJson.length() > 0) {
+                                workoutObject.put("route", routeJson)
+                            }
                         }
                     }
 
@@ -612,7 +563,7 @@ class HealthPlugin : Plugin() {
         } catch (e: Exception) {
             Log.e(tag, "addWorkoutMetric: Failed to aggregate ${metricAndMapper.name}", e)
         }
-        return false;
+        return false
     }
 
 
