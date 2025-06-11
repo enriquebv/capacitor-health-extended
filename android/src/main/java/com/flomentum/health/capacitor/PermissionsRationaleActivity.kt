@@ -25,30 +25,57 @@
  *
  */
 
-package com.[YOUR_ORGANIZATION].[YOUR_APP...]
+// package com.[YOUR_ORGANIZATION].[YOUR_APP...]
 
 import android.os.Bundle
 import android.util.Log
+import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.appcompat.app.AppCompatActivity
 
 class PermissionsRationaleActivity : AppCompatActivity() {
+  private lateinit var webView: WebView
+
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
-    val webView = WebView(this).apply {
+
+    supportActionBar?.apply {
+      title = "Privacy Policy"
+      setDisplayHomeAsUpEnabled(true)
+    }
+
+    webView = WebView(this).apply {
+      settings.javaScriptEnabled = true
+      webChromeClient = WebChromeClient()
       webViewClient = object : WebViewClient() {
         override fun shouldOverrideUrlLoading(view: WebView, request: android.webkit.WebResourceRequest) = false
         override fun onReceivedError(
-            view: WebView,
-            request: android.webkit.WebResourceRequest,
-            error: android.webkit.WebResourceError
+          view: WebView,
+          request: android.webkit.WebResourceRequest,
+          error: android.webkit.WebResourceError
         ) {
-            Log.e("WebView", "Failed to load: ${error.description}")
+          Log.e("WebView", "Failed to load: ${error.description}")
         }
       }
       loadUrl("https://flomentumsolutions.com/privacy-policy")
     }
+
     setContentView(webView)
+  }
+
+  // Toolbar Up button behavior
+  override fun onSupportNavigateUp(): Boolean {
+    finish()
+    return true
+  }
+
+  // Device back button behavior
+  override fun onBackPressed() {
+    if (webView.canGoBack()) {
+      webView.goBack()
+    } else {
+      super.onBackPressed()
+    }
   }
 }
