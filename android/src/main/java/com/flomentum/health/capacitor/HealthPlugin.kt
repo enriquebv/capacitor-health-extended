@@ -65,6 +65,24 @@ class HealthPlugin : Plugin() {
     private lateinit var healthConnectClient: HealthConnectClient
     private var available: Boolean = false
 
+    private lateinit var permissionsLauncher: androidx.activity.result.ActivityResultLauncher<Set<String>>
+
+    override fun load() {
+        super.load()
+        permissionsLauncher = bridge.activity.registerForActivityResult(
+            PermissionController.createRequestPermissionResultContract()
+        ) { grantedPermissions: Set<String> ->
+            Log.i(tag, "Permissions callback: $grantedPermissions")
+            requestPermissionContext.get()?.let { context ->
+                val result = JSObject().apply {
+                    put("permissions", JSArray(grantedPermissions))
+                }
+                context.pluginCal.resolve(result)
+                requestPermissionContext.set(null)
+            }
+        }
+    }
+
     // Check if Google Health Connect is available. Must be called before anything else
     @PluginMethod
     fun isHealthAvailable(call: PluginCall) {
@@ -147,66 +165,28 @@ class HealthPlugin : Plugin() {
     @PluginMethod
     fun requestHealthPermissions(call: PluginCall) {
         if (!ensureClientInitialized(call)) return
-        val permissionsToRequest = call.getArray("permissions")
-        if (permissionsToRequest == null) {
-            call.reject("Must provide permissions to request")
-            return
+        val permArray = call.getArray("permissions") ?: return call.reject("Must provide permissions to request")
+        val requestedCaps = permArray.toList<String>().mapNotNull { CapHealthPermission.from(it) }.toSet()
+        val hcPermissions = requestedCaps.mapNotNull { permissionMapping[it] }.toSet()
+        if (hcPermissions.isEmpty()) return call.reject("No valid permissions to request")
+
+        requestPermissionContext.set(RequestPermissionContext(requestedCaps, call))
+
+        // Show rationale screen if available
+        val rationaleIntent = Intent("androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE").apply {
+            setPackage("com.google.android.apps.healthdata")
+        }
+        if (rationaleIntent.resolveActivity(context.packageManager) != null) {
+            try { context.startActivity(rationaleIntent) }
+            catch (e: Exception) { Log.e(tag, "Rationale launch failed", e) }
+        } else {
+            Log.w(tag, "Health Connect rationale screen not found")
         }
 
-        val requested: List<String> =
-            call.getArray("permissions")?.toList() ?: emptyList()
-
-        val hcPermissions: Set<String> = requested.mapNotNull { key ->
-            CapHealthPermission.from(key)?.let { permissionMapping[it] }
-        }.toSet()
-
-        if (hcPermissions.isEmpty()) {
-            call.reject("No valid permissions to request")
-            return
-        }
-
-        val permissionsLauncher = bridge.activity.registerForActivityResult(
-            PermissionController.createRequestPermissionResultContract()
-        ) { grantedPermissions: Set<String> ->
-            Log.i(tag, "Permissions callback: $grantedPermissions")
-            requestPermissionContext.get()?.let { context ->
-                val result = JSObject().apply {
-                    put("permissions", JSArray(grantedPermissions))
-                }
-                context.pluginCal.resolve(result)
-                requestPermissionContext.set(null)
-            }
-        }
-
-        CoroutineScope(Dispatchers.IO).launch {
+        // Only launch once on main thread
+        CoroutineScope(Dispatchers.Main).launch {
             Log.i(tag, "Launching permission request for: $hcPermissions")
-            try {
-                requestPermissionContext.set(
-                    RequestPermissionContext(
-                        requested.mapNotNull { CapHealthPermission.from(it) }.toSet(),
-                        call
-                    )
-                )
-                // Show Health Connect rationale screen if available before launching permission request
-                val rationaleIntent = Intent("androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE").apply {
-                    setPackage("com.google.android.apps.healthdata")
-                }
-                if (rationaleIntent.resolveActivity(context.packageManager) != null) {
-                    try {
-                        Log.i(tag, "Launching Health Connect rationale screen")
-                        context.startActivity(rationaleIntent)
-                    } catch (e: Exception) {
-                        Log.e(tag, "Failed to launch Health Connect rationale screen", e)
-                    }
-                } else {
-                    Log.w(tag, "Health Connect rationale screen not available")
-                }
-                permissionsLauncher.launch(hcPermissions)
-                Log.i(tag, "Permission request launched")
-            } catch (e: Exception) {
-                call.reject("Permission request failed: ${e.message}")
-                requestPermissionContext.set(null)
-            }
+            permissionsLauncher.launch(hcPermissions)
         }
     }
 
@@ -665,5 +645,4 @@ class HealthPlugin : Plugin() {
         82 to "WHEELCHAIR",
         83 to "YOGA"
     )
-
 }
