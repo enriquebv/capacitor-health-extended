@@ -82,6 +82,10 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func queryLatestSample(_ call: CAPPluginCall) {
+        guard let dataTypeString = call.getString("dataType") else {
+            call.reject("Missing data type")
+            return
+        }
         guard aggregateTypeToHKQuantityType(dataTypeString) != nil else {
             call.reject("Invalid data type")
             return
@@ -110,7 +114,7 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
 
         let query = HKSampleQuery(sampleType: type, predicate: predicate, limit: 1, sortDescriptors: [sortDescriptor]) { _, samples, error in
             
-            print("Samples count for \\(dataTypeString):", samples?.count ?? 0)
+            print("Samples count for \(dataTypeString):", samples?.count ?? 0)
             
             guard let quantitySample = samples?.first as? HKQuantitySample else {
                 if let error = error {
@@ -210,20 +214,13 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
         
         if(dataTypeString == "mindfulness") {
             self.queryMindfulnessAggregated(startDate: startDate, endDate: endDate) {result, error in
-                    if let error = error {
+                if let error = error {
                     call.reject(error.localizedDescription)
                 } else if let result = result {
                     call.resolve(["aggregatedData": result])
                 }
             }
         } else {
-            
-            guard let dataType = aggregateTypeToHKQuantityType(dataTypeString) else {
-                call.reject("Invalid data type")
-                return
-            }
-            
-            
             let predicate = HKQuery.predicateForSamples(withStart: startDate, end: endDate, options: .strictStartDate)
             
             guard let interval = calculateInterval(bucket: bucket) else {
@@ -326,8 +323,8 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
             dayComponent.day = 1
             dailyDurations.forEach { (dateAndDuration) in
                 aggregatedSamples.append([
-                    "startDate": dateAndDuration.key,
-                    "endDate": calendar.date(byAdding: dayComponent, to: dateAndDuration.key),
+                    "startDate": dateAndDuration.key as Any,
+                    "endDate": calendar.date(byAdding: dayComponent, to: dateAndDuration.key) as Any,
                     "value": dateAndDuration.value
                 ])
             }

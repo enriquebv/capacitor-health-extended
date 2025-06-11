@@ -103,6 +103,7 @@ class HealthPlugin : Plugin() {
     private lateinit var permissionsLauncher: ActivityResultLauncher<Set<String>>
     override fun load() {
         super.load()
+        Log.i(tag, "HealthPlugin loaded and initializing permission launcher")
 
         val contract: ActivityResultContract<Set<String>, Set<String>> =
             PermissionController.createRequestPermissionResultContract()
@@ -115,6 +116,7 @@ class HealthPlugin : Plugin() {
             }
         }
         permissionsLauncher = activity.registerForActivityResult(contract, callback)
+        Log.i(tag, "Permission launcher initialized: $permissionsLauncher")
     }
 
     // Check if Google Health Connect is available. Must be called before anything else
@@ -216,10 +218,12 @@ class HealthPlugin : Plugin() {
         val permissions = permissionsToRequest.toList<String>().mapNotNull { CapHealthPermission.from(it) }.toSet()
         val healthConnectPermissions = permissions.mapNotNull { permissionMapping[it] }.toSet()
 
-        CoroutineScope(Dispatchers.IO).launch {
+        CoroutineScope(Dispatchers.Main).launch {
+            Log.i(tag, "Launching permission request for: $healthConnectPermissions")
             try {
                 requestPermissionContext.set(RequestPermissionContext(permissions, call))
                 permissionsLauncher.launch(healthConnectPermissions)
+                Log.i(tag, "Permission request launched")
             } catch (e: Exception) {
                 call.reject("Permission request failed: ${e.message}")
                 requestPermissionContext.set(null)
