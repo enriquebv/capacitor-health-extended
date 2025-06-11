@@ -32,6 +32,7 @@ import android.util.Log
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.activity.addCallback
 import androidx.appcompat.app.AppCompatActivity
 
 class PermissionsRationaleActivity : AppCompatActivity() {
@@ -70,20 +71,16 @@ class PermissionsRationaleActivity : AppCompatActivity() {
         }
 
         setContentView(webView)
+
+        // Device back button behavior
+        onBackPressedDispatcher.addCallback(this) {
+            finish()
+        }
     }
 
     // Toolbar Up button behavior
     override fun onSupportNavigateUp(): Boolean {
         finish()
         return true
-    }
-
-    // Device back button behavior
-    override fun onBackPressed() {
-        if (webView.canGoBack()) {
-            webView.goBack()
-        } else {
-            super.onBackPressed()
-        }
     }
 }
