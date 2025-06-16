@@ -1,5 +1,5 @@
 {
-  "name": "capacitor-health-extended",
+  "name": "@flomentumsolutions/capacitor-health-extended",
   "version": "0.0.1",
   "description": "Capacitor plugin for Apple HealthKit and Google Health Connect Platform",
   "main": "dist/plugin.cjs.js",
