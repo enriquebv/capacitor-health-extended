@@ -16,5 +16,5 @@ Pod::Spec.new do |s|
   s.dependency 'Capacitor',        '~> 6.2'
   s.dependency 'CapacitorCordova', '~> 6.2'
   # Match the Swift shipped with Xcode 16 (use 5.9 for Xcode 15.x)
-  s.swift_version = '6.0'
+  s.swift_version = '5.9'
 end
