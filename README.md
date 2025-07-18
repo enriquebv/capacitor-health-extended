@@ -1,10 +1,14 @@
-# capacitor-health
+# capacitor-health-extended
 
 Capacitor plugin to query data from Apple Health and Google Health Connect
 
 ## Thanks and attribution
 
-Some parts, concepts and ideas are borrowed from [cordova-plugin-health](https://github.com/dariosalvi78/cordova-plugin-health/). Big thanks to [@dariosalvi78](https://github.com/dariosalvi78) for the support.
+Forked from [capacitor-health](https://github.,com/mley/capacitor-health) and as such...
+- Some parts, concepts and ideas are borrowed from [cordova-plugin-health](https://github.com/dariosalvi78/cordova-plugin-health/).
+- Big thanks to [@dariosalvi78](https://github.com/dariosalvi78) for the support.
+
+Thanks [@mley](https://github.com/mley) for the ground work. The goal of this fork is to extend functionality and datapoints and keep up with the ever-changing brand-new Android Health Connect Platform. I'm hoping to create platform parity for capacitor API-based health data access.
 
 ## Install
 
