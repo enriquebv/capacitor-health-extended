@@ -63,6 +63,8 @@ export declare type HealthPermission =
   | 'READ_ACTIVE_CALORIES'
   | 'READ_TOTAL_CALORIES'
   | 'READ_DISTANCE'
+  | 'READ_WEIGHT'
+  | 'READ_HEIGHT'
   | 'READ_HEART_RATE'
   | 'READ_ROUTE'
   | 'READ_MINDFULNESS'

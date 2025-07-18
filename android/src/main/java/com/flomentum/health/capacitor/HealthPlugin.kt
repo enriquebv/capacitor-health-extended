@@ -51,6 +51,7 @@ enum class CapHealthPermission {
     permissions = [
         Permission(alias = "READ_STEPS", strings = ["android.permission.health.READ_STEPS"]),
         Permission(alias = "READ_WEIGHT", strings = ["android.permission.health.READ_WEIGHT"]),
+        Permission(alias = "READ_HEIGHT", strings = ["android.permission.health.READ_HEIGHT"]),
         Permission(alias = "READ_WORKOUTS", strings = ["android.permission.health.READ_EXERCISE"]),
         Permission(alias = "READ_DISTANCE", strings = ["android.permission.health.READ_DISTANCE"]),
         Permission(alias = "READ_ACTIVE_CALORIES", strings = ["android.permission.health.READ_ACTIVE_CALORIES_BURNED"]),

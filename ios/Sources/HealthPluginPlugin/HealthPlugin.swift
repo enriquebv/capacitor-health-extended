@@ -148,6 +148,14 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
                 return HKObjectType.quantityType(forIdentifier: .stepCount)
             case "hrv":
                 return HKObjectType.quantityType(forIdentifier: .heartRateVariabilitySDNN)
+            case "height":
+                return HKObjectType.quantityType(forIdentifier: .height)
+            case "distance":
+                return HKObjectType.quantityType(forIdentifier: .distanceWalkingRunning)
+            case "active-calories":
+                return HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)
+            case "total-calories":
+                return HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)
             case "blood-pressure":
                 return nil // handled above
             default:
@@ -183,8 +191,13 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
                 unit = .gramUnit(with: .kilo)
             } else if dataTypeString == "hrv" {
                 unit = HKUnit.secondUnit(with: .milli)
+            } else if dataTypeString == "distance" {
+                unit = HKUnit.meter()
+            } else if dataTypeString == "active-calories" || dataTypeString == "total-calories" {
+                unit = HKUnit.kilocalorie()
+            } else if dataTypeString == "height" {
+                unit = HKUnit.meter()
             }
-
             let value = quantitySample.quantity.doubleValue(for: unit)
             let timestamp = quantitySample.startDate.timeIntervalSince1970 * 1000
 
@@ -216,6 +229,13 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
             return [HKObjectType.quantityType(forIdentifier: .stepCount)].compactMap{$0}
         case "READ_WEIGHT":
             return [HKObjectType.quantityType(forIdentifier: .bodyMass)].compactMap{$0}
+        case "READ_HEIGHT":
+            return [HKObjectType.quantityType(forIdentifier: .height)].compactMap { $0 }
+        case "READ_TOTAL_CALORIES":
+            return [
+                HKObjectType.quantityType(forIdentifier: .activeEnergyBurned),
+                HKObjectType.quantityType(forIdentifier: .basalEnergyBurned)   // iOS 16+
+            ].compactMap { $0 }
         case "READ_ACTIVE_CALORIES":
             return [HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)].compactMap{$0}
         case "READ_WORKOUTS":
@@ -257,6 +277,12 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
             return HKObjectType.quantityType(forIdentifier: .bodyMass)
         case "hrv":
             return HKObjectType.quantityType(forIdentifier: .heartRateVariabilitySDNN)
+        case "distance":
+            return HKObjectType.quantityType(forIdentifier: .distanceWalkingRunning)  // pick one rep type
+        case "total-calories":
+            return HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)
+        case "height":
+            return HKObjectType.quantityType(forIdentifier: .height)
         default:
             return nil
         }
@@ -296,11 +322,12 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
             }
 
             let options: HKStatisticsOptions = {
-                switch dataType.identifier {
-                case HKQuantityTypeIdentifier.heartRate.rawValue,
-                     HKQuantityTypeIdentifier.bodyMass.rawValue:
-                    return .discreteAverage
-                default:
+                switch dataType.aggregationStyle {
+                case .cumulative:
+                    return .cumulativeSum
+                case .discrete:
+                    return .discreteAverage     // or .discreteMin / Max when needed
+                @unknown default:
                     return .cumulativeSum
                 }
             }()
@@ -312,41 +339,63 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
                 anchorDate: startDate,
                 intervalComponents: interval
             )
-            
+
             query.initialResultsHandler = { query, result, error in
                 if let error = error {
                     call.reject("Error fetching aggregated data: \(error.localizedDescription)")
                     return
                 }
-                
+
                 var aggregatedSamples: [[String: Any]] = []
-                
-                result?.enumerateStatistics(from: startDate, to: endDate) { statistics, stop in
-                    if let sum = statistics.sumQuantity() {
-                        let startDate = statistics.startDate.timeIntervalSince1970 * 1000
-                        let endDate = statistics.endDate.timeIntervalSince1970 * 1000
-                        
-                        var value: Double = -1.0
-                        if(dataTypeString == "steps" && dataType.is(compatibleWith: HKUnit.count())) {
-                            value = sum.doubleValue(for: HKUnit.count())
-                        } else if(dataTypeString == "active-calories" && dataType.is(compatibleWith: HKUnit.kilocalorie())) {
-                            value = sum.doubleValue(for: HKUnit.kilocalorie())
-                        } else if(dataTypeString == "mindfulness" && dataType.is(compatibleWith: HKUnit.second())) {
-                            value = sum.doubleValue(for: HKUnit.second())
+
+                result?.enumerateStatistics(from: startDate, to: endDate) { statistics, _ in
+                    // Choose sum or average based on the options we picked
+                    let quantity: HKQuantity? = options.contains(.cumulativeSum)
+                        ? statistics.sumQuantity()
+                        : statistics.averageQuantity()
+
+                    guard let quantity = quantity else { return }
+
+                    // Time‑bounds of this bucket
+                    let bucketStart = statistics.startDate.timeIntervalSince1970 * 1000
+                    let bucketEnd   = statistics.endDate.timeIntervalSince1970 * 1000
+
+                    // Map dataType → correct HKUnit
+                    let unit: HKUnit = {
+                        switch dataTypeString {
+                        case "steps":
+                            return .count()
+                        case "active-calories", "total-calories":
+                            return .kilocalorie()
+                        case "distance":
+                            return .meter()
+                        case "weight":
+                            return .gramUnit(with: .kilo)
+                        case "height":
+                            return .meter()
+                        case "heart-rate":
+                            return HKUnit.count().unitDivided(by: HKUnit.minute())
+                        case "hrv":
+                            return HKUnit.secondUnit(with: .milli)
+                        case "mindfulness":
+                            return HKUnit.second()
+                        default:
+                            return .count()
                         }
-                        
-                        
-                        aggregatedSamples.append([
-                            "startDate": startDate,
-                            "endDate": endDate,
-                            "value": value
-                        ])
-                    }
+                    }()
+
+                    let value = quantity.doubleValue(for: unit)
+
+                    aggregatedSamples.append([
+                        "startDate": bucketStart,
+                        "endDate":   bucketEnd,
+                        "value":     value
+                    ])
                 }
-                
+
                 call.resolve(["aggregatedData": aggregatedSamples])
             }
-            
+
             healthStore.execute(query)
         }
     }
