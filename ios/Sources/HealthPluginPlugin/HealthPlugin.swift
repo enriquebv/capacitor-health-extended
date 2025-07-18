@@ -6,6 +6,7 @@ import HealthKit
  * Please read the Capacitor iOS Plugin Development Guide
  * here: https://capacitorjs.com/docs/plugins/ios
  */
+@MainActor
 @objc(HealthPlugin)
 public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
     public let identifier = "HealthPlugin"
@@ -21,6 +22,9 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
     ]
     
     let healthStore = HKHealthStore()
+    
+    /// Serial queue to make route‑location mutations thread‑safe without locks
+    private let routeSyncQueue = DispatchQueue(label: "com.flomentum.healthplugin.routeSync")
     
     @objc func isHealthAvailable(_ call: CAPPluginCall) {
         let isAvailable = HKHealthStore.isHealthDataAvailable()
@@ -325,10 +329,26 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
                 switch dataType.aggregationStyle {
                 case .cumulative:
                     return .cumulativeSum
+
+                // Newer discrete aggregation styles (iOS 15 +)
+                case .discreteAverage:
+                    return .discreteAverage
+                @available(iOS 17.0, *)
+                case .discreteTemporallyWeighted:
+                    return .discreteAverage
+                @available(iOS 17.0, *)
+                case .discreteEquivalentContinuousLevel:
+                    return .discreteAverage
+                @available(iOS 17.0, *)
+                case .discreteArithmetic:
+                    return .discreteAverage
+
+                // Legacy discrete fallback
                 case .discrete:
-                    return .discreteAverage     // or .discreteMin / Max when needed
+                    return .discreteAverage
+
                 @unknown default:
-                    return .cumulativeSum
+                    return .discreteAverage
                 }
             }()
 
@@ -400,7 +420,7 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
     
-    func queryMindfulnessAggregated(startDate: Date, endDate: Date, completion: @escaping ([[String: Any]]?, Error?) -> Void) {
+    func queryMindfulnessAggregated(startDate: Date, endDate: Date, completion: @escaping @Sendable ([[String: Any]]?, Error?) -> Void) {
         guard let mindfulType = HKObjectType.categoryType(forIdentifier: .mindfulSession) else {
             completion(nil, NSError(domain: "HealthKit", code: -1, userInfo: [NSLocalizedDescriptionKey: "MindfulSession type unavailable"]))
             return
@@ -448,7 +468,7 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
     
     
     
-    private func queryAggregated(for startDate: Date, for endDate: Date, for dataType: HKQuantityType?, completion: @escaping(Double?) -> Void) {
+    private func queryAggregated(for startDate: Date, for endDate: Date, for dataType: HKQuantityType?, completion: @escaping @Sendable(Double?) -> Void) {
         
     
         guard let quantityType = dataType else {
@@ -602,7 +622,7 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
     
     
     // MARK: - Query Heart Rate Data
-    private func queryHeartRate(for workout: HKWorkout, completion: @escaping ([[String: Any]], String?) -> Void) {
+    private func queryHeartRate(for workout: HKWorkout, completion: @escaping @Sendable ([[String: Any]], String?) -> Void) {
         let heartRateType = HKObjectType.quantityType(forIdentifier: .heartRate)!
         let predicate = HKQuery.predicateForSamples(withStart: workout.startDate, end: workout.endDate, options: .strictStartDate)
         
@@ -633,7 +653,7 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
     }
     
     // MARK: - Query Route Data
-    private func queryRoute(for workout: HKWorkout, completion: @escaping ([[String: Any]], String?) -> Void) {
+    private func queryRoute(for workout: HKWorkout, completion: @escaping @Sendable ([[String: Any]], String?) -> Void) {
         let routeType = HKSeriesType.workoutRoute()
         let predicate = HKQuery.predicateForObjects(from: workout)
         
@@ -664,30 +684,33 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
     }
     
     // MARK: - Query Route Locations
-    private func queryLocations(for route: HKWorkoutRoute, completion: @escaping ([[String: Any]]) -> Void) {
+    private func queryLocations(for route: HKWorkoutRoute, completion: @escaping @Sendable ([[String: Any]]) -> Void) {
         var routeLocations: [[String: Any]] = []
-        
-        let locationQuery = HKWorkoutRouteQuery(route: route) { query, locations, done, error in
+
+        let locationQuery = HKWorkoutRouteQuery(route: route) { _, locations, done, error in
             guard let locations = locations, error == nil else {
                 completion([])
                 return
             }
-            
-            for location in locations {
-                let locationDict: [String: Any] = [
-                    "timestamp": location.timestamp,
-                    "lat": location.coordinate.latitude,
-                    "lng": location.coordinate.longitude,
-                    "alt": location.altitude
-                ]
-                routeLocations.append(locationDict)
-            }
-            
-            if done {
-                completion(routeLocations)
+
+            // Append on a dedicated serial queue so we’re race‑free without NSLock
+            self.routeSyncQueue.async {
+                for location in locations {
+                    let locationDict: [String: Any] = [
+                        "timestamp": location.timestamp,
+                        "lat": location.coordinate.latitude,
+                        "lng": location.coordinate.longitude,
+                        "alt": location.altitude
+                    ]
+                    routeLocations.append(locationDict)
+                }
+
+                if done {
+                    completion(routeLocations)
+                }
             }
         }
-        
+
         healthStore.execute(locationQuery)
     }
     
