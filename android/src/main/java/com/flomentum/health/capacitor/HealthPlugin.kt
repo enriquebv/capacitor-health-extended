@@ -32,7 +32,8 @@ import java.util.concurrent.atomic.AtomicReference
 import androidx.core.net.toUri
 
 enum class CapHealthPermission {
-    READ_STEPS, READ_WORKOUTS, READ_HEART_RATE, READ_ACTIVE_CALORIES, READ_TOTAL_CALORIES, READ_DISTANCE, READ_WEIGHT;
+    READ_STEPS, READ_WORKOUTS, READ_HEART_RATE, READ_ACTIVE_CALORIES, READ_TOTAL_CALORIES, READ_DISTANCE, READ_WEIGHT
+    , READ_HRV, READ_BLOOD_PRESSURE;
 
     companion object {
         fun from(s: String): CapHealthPermission? {
@@ -54,7 +55,9 @@ enum class CapHealthPermission {
         Permission(alias = "READ_DISTANCE", strings = ["android.permission.health.READ_DISTANCE"]),
         Permission(alias = "READ_ACTIVE_CALORIES", strings = ["android.permission.health.READ_ACTIVE_CALORIES_BURNED"]),
         Permission(alias = "READ_TOTAL_CALORIES", strings = ["android.permission.health.READ_TOTAL_CALORIES_BURNED"]),
-        Permission(alias = "READ_HEART_RATE", strings = ["android.permission.health.READ_HEART_RATE"])
+        Permission(alias = "READ_HEART_RATE", strings = ["android.permission.health.READ_HEART_RATE"]),
+        Permission(alias = "READ_HRV", strings = ["android.permission.health.READ_HEART_RATE_VARIABILITY"]),
+        Permission(alias = "READ_BLOOD_PRESSURE", strings = ["android.permission.health.READ_BLOOD_PRESSURE"])
     ]
 )
 
@@ -75,7 +78,9 @@ class HealthPlugin : Plugin() {
         CapHealthPermission.READ_ACTIVE_CALORIES to HealthPermission.getReadPermission(ActiveCaloriesBurnedRecord::class),
         CapHealthPermission.READ_TOTAL_CALORIES to HealthPermission.getReadPermission(TotalCaloriesBurnedRecord::class),
         CapHealthPermission.READ_DISTANCE to HealthPermission.getReadPermission(DistanceRecord::class),
-        CapHealthPermission.READ_WORKOUTS to HealthPermission.getReadPermission(ExerciseSessionRecord::class)
+        CapHealthPermission.READ_WORKOUTS to HealthPermission.getReadPermission(ExerciseSessionRecord::class),
+        CapHealthPermission.READ_HRV to HealthPermission.getReadPermission(HeartRateVariabilitySdnnRecord::class),
+        CapHealthPermission.READ_BLOOD_PRESSURE to HealthPermission.getReadPermission(BloodPressureRecord::class)
     )
 
     override fun load() {
@@ -258,6 +263,7 @@ class HealthPlugin : Plugin() {
                 TotalCaloriesBurnedRecord.ENERGY_TOTAL
             ) { it?.inKilocalories }
             "distance" -> metricAndMapper("distance", CapHealthPermission.READ_DISTANCE, DistanceRecord.DISTANCE_TOTAL) { it?.inMeters }
+            "hrv" -> metricAndMapper("hrv", CapHealthPermission.READ_HRV, HeartRateVariabilitySdnnRecord.SDNN_AVG) { it }
             else -> throw RuntimeException("Unsupported dataType: $dataType")
         }
     }
@@ -277,6 +283,8 @@ class HealthPlugin : Plugin() {
                     "heart-rate" -> readLatestHeartRate()
                     "weight" -> readLatestWeight()
                     "steps" -> readLatestSteps()
+                    "hrv" -> readLatestHrv()
+                    "blood-pressure" -> readLatestBloodPressure()
                     else -> {
                         call.reject("Unsupported data type: $dataType")
                         return@launch
@@ -284,7 +292,7 @@ class HealthPlugin : Plugin() {
                 }
                 call.resolve(result)
             } catch (e: Exception) {
-                Log.e(tag, "queryLatestSample: Error fetching latest heart-rate", e)
+                Log.e(tag, "queryLatestSample: Error fetching latest $dataType", e)
                 call.reject("Error fetching latest $dataType: ${e.message}")
             }
         }
@@ -341,6 +349,41 @@ class HealthPlugin : Plugin() {
             put("startDate", record.startTime.toString())
             put("endDate", record.endTime.toString())
             put("value", record.count)
+        }
+    }
+
+    private suspend fun readLatestHrv(): JSObject {
+        if (!hasPermission(CapHealthPermission.READ_HRV)) {
+            throw Exception("Permission for HRV not granted")
+        }
+        val request = ReadRecordsRequest(
+            recordType = HeartRateVariabilitySdnnRecord::class,
+            timeRangeFilter = TimeRangeFilter.after(Instant.EPOCH),
+            pageSize = 1
+        )
+        val result = healthConnectClient.readRecords(request)
+        val record = result.records.firstOrNull() ?: throw Exception("No HRV data found")
+        return JSObject().apply {
+            put("timestamp", record.time.toString())
+            put("value", record.sdnnMillis)
+        }
+    }
+
+    private suspend fun readLatestBloodPressure(): JSObject {
+        if (!hasPermission(CapHealthPermission.READ_BLOOD_PRESSURE)) {
+            throw Exception("Permission for blood pressure not granted")
+        }
+        val request = ReadRecordsRequest(
+            recordType = BloodPressureRecord::class,
+            timeRangeFilter = TimeRangeFilter.after(Instant.EPOCH),
+            pageSize = 1
+        )
+        val result = healthConnectClient.readRecords(request)
+        val record = result.records.firstOrNull() ?: throw Exception("No blood pressure data found")
+        return JSObject().apply {
+            put("timestamp", record.time.toString())
+            put("systolic", record.systolic.inMillimetersOfMercury)
+            put("diastolic", record.diastolic.inMillimetersOfMercury)
         }
     }
 

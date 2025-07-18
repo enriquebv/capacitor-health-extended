@@ -86,6 +86,53 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
             call.reject("Missing data type")
             return
         }
+        // ---- Special handling for blood‑pressure correlation ----
+        if dataTypeString == "blood-pressure" {
+            guard let bpType = HKObjectType.correlationType(forIdentifier: .bloodPressure) else {
+                call.reject("Blood pressure type not available")
+                return
+            }
+            
+            let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: false)
+            let predicate = HKQuery.predicateForSamples(withStart: Date.distantPast, end: Date(), options: .strictEndDate)
+            
+            let query = HKSampleQuery(sampleType: bpType, predicate: predicate, limit: 1, sortDescriptors: [sortDescriptor]) { _, samples, error in
+                
+                guard let bpCorrelation = samples?.first as? HKCorrelation else {
+                    if let error = error {
+                        call.reject("Error fetching latest blood pressure sample", "NO_SAMPLE", error)
+                    } else {
+                        call.reject("No blood pressure sample found", "NO_SAMPLE")
+                    }
+                    return
+                }
+                
+                let unit = HKUnit.millimeterOfMercury()
+                
+                let systolicSamples = bpCorrelation.objects(for: HKObjectType.quantityType(forIdentifier: .bloodPressureSystolic)!)
+                let diastolicSamples = bpCorrelation.objects(for: HKObjectType.quantityType(forIdentifier: .bloodPressureDiastolic)!)
+                
+                guard let systolicSample = systolicSamples.first as? HKQuantitySample,
+                      let diastolicSample = diastolicSamples.first as? HKQuantitySample else {
+                    call.reject("Incomplete blood pressure data", "NO_SAMPLE")
+                    return
+                }
+                
+                let systolicValue = systolicSample.quantity.doubleValue(for: unit)
+                let diastolicValue = diastolicSample.quantity.doubleValue(for: unit)
+                let timestamp = bpCorrelation.startDate.timeIntervalSince1970 * 1000
+                
+                call.resolve([
+                    "systolic": systolicValue,
+                    "diastolic": diastolicValue,
+                    "timestamp": timestamp,
+                    "unit": unit.unitString
+                ])
+            }
+            
+            healthStore.execute(query)
+            return
+        }
         guard aggregateTypeToHKQuantityType(dataTypeString) != nil else {
             call.reject("Invalid data type")
             return
@@ -99,6 +146,10 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
                 return HKObjectType.quantityType(forIdentifier: .bodyMass)
             case "steps":
                 return HKObjectType.quantityType(forIdentifier: .stepCount)
+            case "hrv":
+                return HKObjectType.quantityType(forIdentifier: .heartRateVariabilitySDNN)
+            case "blood-pressure":
+                return nil // handled above
             default:
                 return nil
             }
@@ -130,6 +181,8 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
                 unit = HKUnit.count().unitDivided(by: HKUnit.minute())
             } else if dataTypeString == "weight" {
                 unit = .gramUnit(with: .kilo)
+            } else if dataTypeString == "hrv" {
+                unit = HKUnit.secondUnit(with: .milli)
             }
 
             let value = quantitySample.quantity.doubleValue(for: unit)
@@ -180,6 +233,13 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
             ].compactMap{$0}
         case "READ_MINDFULNESS":
             return [HKObjectType.categoryType(forIdentifier: .mindfulSession)!].compactMap{$0}
+        case "READ_HRV":
+            return [HKObjectType.quantityType(forIdentifier: .heartRateVariabilitySDNN)].compactMap { $0 }
+        case "READ_BLOOD_PRESSURE":
+            return [
+                HKObjectType.quantityType(forIdentifier: .bloodPressureSystolic),
+                HKObjectType.quantityType(forIdentifier: .bloodPressureDiastolic)
+            ].compactMap { $0 }
         default:
             return []
         }
@@ -195,6 +255,8 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
             return HKObjectType.quantityType(forIdentifier: .heartRate)
         case "weight":
             return HKObjectType.quantityType(forIdentifier: .bodyMass)
+        case "hrv":
+            return HKObjectType.quantityType(forIdentifier: .heartRateVariabilitySDNN)
         default:
             return nil
         }
