@@ -65,7 +65,18 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         
+        print("⚡️ [HealthPlugin] Requesting permissions: \(permissions)")
+        
         let types: [HKObjectType] = permissions.flatMap { permissionToHKObjectType($0) }
+        
+        print("⚡️ [HealthPlugin] Mapped to \(types.count) HKObjectTypes")
+        
+        // Validate that we have at least one valid permission type
+        guard !types.isEmpty else {
+            let invalidPermissions = permissions.filter { permissionToHKObjectType($0).isEmpty }
+            call.reject("No valid permission types found. Invalid permissions: \(invalidPermissions)")
+            return
+        }
         
         healthStore.requestAuthorization(toShare: nil, read: Set(types)) { success, error in
             if success {
@@ -263,7 +274,44 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
                 HKObjectType.quantityType(forIdentifier: .bloodPressureSystolic),
                 HKObjectType.quantityType(forIdentifier: .bloodPressureDiastolic)
             ].compactMap { $0 }
+        // Add common alternative permission names
+        case "steps":
+            return [HKObjectType.quantityType(forIdentifier: .stepCount)].compactMap{$0}
+        case "weight":
+            return [HKObjectType.quantityType(forIdentifier: .bodyMass)].compactMap{$0}
+        case "height":
+            return [HKObjectType.quantityType(forIdentifier: .height)].compactMap { $0 }
+        case "calories", "total-calories":
+            return [
+                HKObjectType.quantityType(forIdentifier: .activeEnergyBurned),
+                HKObjectType.quantityType(forIdentifier: .basalEnergyBurned)   // iOS 16+
+            ].compactMap { $0 }
+        case "active-calories":
+            return [HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)].compactMap{$0}
+        case "workouts":
+            return [HKObjectType.workoutType()].compactMap{$0}
+        case "heart-rate", "heartrate":
+            return  [HKObjectType.quantityType(forIdentifier: .heartRate)].compactMap{$0}
+        case "route":
+            return  [HKSeriesType.workoutRoute()].compactMap{$0}
+        case "distance":
+            return [
+                HKObjectType.quantityType(forIdentifier: .distanceCycling),
+                HKObjectType.quantityType(forIdentifier: .distanceSwimming),
+                HKObjectType.quantityType(forIdentifier: .distanceWalkingRunning),
+                HKObjectType.quantityType(forIdentifier: .distanceDownhillSnowSports)
+            ].compactMap{$0}
+        case "mindfulness":
+            return [HKObjectType.categoryType(forIdentifier: .mindfulSession)!].compactMap{$0}
+        case "hrv":
+            return [HKObjectType.quantityType(forIdentifier: .heartRateVariabilitySDNN)].compactMap { $0 }
+        case "blood-pressure", "bloodpressure":
+            return [
+                HKObjectType.quantityType(forIdentifier: .bloodPressureSystolic),
+                HKObjectType.quantityType(forIdentifier: .bloodPressureDiastolic)
+            ].compactMap { $0 }
         default:
+            print("⚡️ [HealthPlugin] Unknown permission: \(permission)")
             return []
         }
     }
