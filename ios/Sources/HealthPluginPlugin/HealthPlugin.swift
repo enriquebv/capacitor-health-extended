@@ -6,7 +6,6 @@ import HealthKit
  * Please read the Capacitor iOS Plugin Development Guide
  * here: https://capacitorjs.com/docs/plugins/ios
  */
-@MainActor
 @objc(HealthPlugin)
 public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
     public let identifier = "HealthPlugin"
@@ -333,17 +332,6 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
                 switch dataType.aggregationStyle {
                 case .cumulative:
                     return .cumulativeSum
-                case .discreteAverage:
-                    return .discreteAverage
-                @available(iOS 17.0, *)
-                case .discreteTemporallyWeighted:
-                    return .discreteAverage
-                @available(iOS 17.0, *)
-                case .discreteEquivalentContinuousLevel:
-                    return .discreteAverage
-                @available(iOS 17.0, *)
-                case .discreteArithmetic:
-                    return .discreteAverage
                 case .discrete:
                     return .discreteAverage
                 @unknown default:
@@ -512,8 +500,10 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
                 return
             }
             let outerGroup = DispatchGroup()
+            let resultsQueue = DispatchQueue(label: "com.flomentum.healthplugin.workoutResults")
             var workoutResults: [[String: Any]] = []
             var errors: [String: String] = [:]
+            
             for workout in workouts {
                 outerGroup.enter()
                 var localDict: [String: Any] = [
@@ -530,11 +520,16 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
                 let innerGroup = DispatchGroup()
                 var localHeartRates: [[String: Any]] = []
                 var localRoutes: [[String: Any]] = []
+                
                 if includeHeartRate {
                     innerGroup.enter()
                     self.queryHeartRate(for: workout) { rates, error in
                         localHeartRates = rates
-                        if let error = error { errors["heart-rate"] = error }
+                        if let error = error { 
+                            resultsQueue.async {
+                                errors["heart-rate"] = error 
+                            }
+                        }
                         innerGroup.leave()
                     }
                 }
@@ -542,7 +537,11 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
                     innerGroup.enter()
                     self.queryRoute(for: workout) { routes, error in
                         localRoutes = routes
-                        if let error = error { errors["route"] = error }
+                        if let error = error { 
+                            resultsQueue.async {
+                                errors["route"] = error 
+                            }
+                        }
                         innerGroup.leave()
                     }
                 }
@@ -558,7 +557,9 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
                 innerGroup.notify(queue: .main) {
                     localDict["heartRate"] = localHeartRates
                     localDict["route"] = localRoutes
-                    workoutResults.append(localDict)
+                    resultsQueue.async {
+                        workoutResults.append(localDict)
+                    }
                     outerGroup.leave()
                 }
             }
@@ -611,11 +612,15 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
             guard let self = self else { return }
             if let routes = samples as? [HKWorkoutRoute], error == nil {
                 let routeDispatchGroup = DispatchGroup()
+                let allLocationsQueue = DispatchQueue(label: "com.flomentum.healthplugin.allLocations")
                 var allLocations: [[String: Any]] = []
+                
                 for route in routes {
                     routeDispatchGroup.enter()
                     self.queryLocations(for: route) { locations in
-                        allLocations.append(contentsOf: locations)
+                        allLocationsQueue.async {
+                            allLocations.append(contentsOf: locations)
+                        }
                         routeDispatchGroup.leave()
                     }
                 }
@@ -634,8 +639,6 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
     
     // MARK: - Query Route Locations
     private func queryLocations(for route: HKWorkoutRoute, completion: @escaping @Sendable ([[String: Any]]) -> Void) {
-        var routeLocations: [[String: Any]] = []
-
         let locationQuery = HKWorkoutRouteQuery(route: route) { [weak self] _, locations, done, error in
             guard let self = self else { return }
             guard let locations = locations, error == nil else {
@@ -645,8 +648,10 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
                 return
             }
 
-            // Append on a dedicated serial queue so we’re race‑free without NSLock
+            // Process locations on the serial queue to avoid race conditions
             self.routeSyncQueue.async {
+                var routeLocations: [[String: Any]] = []
+                
                 for location in locations {
                     let locationDict: [String: Any] = [
                         "timestamp": location.timestamp,
