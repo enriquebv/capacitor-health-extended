@@ -33,7 +33,7 @@ import androidx.core.net.toUri
 
 enum class CapHealthPermission {
     READ_STEPS, READ_WORKOUTS, READ_HEART_RATE, READ_ACTIVE_CALORIES, READ_TOTAL_CALORIES, READ_DISTANCE, READ_WEIGHT
-    , READ_HRV, READ_BLOOD_PRESSURE;
+    , READ_HRV, READ_BLOOD_PRESSURE, READ_HEIGHT, READ_ROUTE, READ_MINDFULNESS;
 
     companion object {
         fun from(s: String): CapHealthPermission? {
@@ -58,7 +58,9 @@ enum class CapHealthPermission {
         Permission(alias = "READ_TOTAL_CALORIES", strings = ["android.permission.health.READ_TOTAL_CALORIES_BURNED"]),
         Permission(alias = "READ_HEART_RATE", strings = ["android.permission.health.READ_HEART_RATE"]),
         Permission(alias = "READ_HRV", strings = ["android.permission.health.READ_HEART_RATE_VARIABILITY"]),
-        Permission(alias = "READ_BLOOD_PRESSURE", strings = ["android.permission.health.READ_BLOOD_PRESSURE"])
+        Permission(alias = "READ_BLOOD_PRESSURE", strings = ["android.permission.health.READ_BLOOD_PRESSURE"]),
+        Permission(alias = "READ_ROUTE", strings = ["android.permission.health.READ_EXERCISE"]),
+        Permission(alias = "READ_MINDFULNESS", strings = ["android.permission.health.READ_SLEEP"])
     ]
 )
 
@@ -76,12 +78,15 @@ class HealthPlugin : Plugin() {
         CapHealthPermission.READ_STEPS to HealthPermission.getReadPermission(StepsRecord::class),
         CapHealthPermission.READ_HEART_RATE to HealthPermission.getReadPermission(HeartRateRecord::class),
         CapHealthPermission.READ_WEIGHT to HealthPermission.getReadPermission(WeightRecord::class),
+        CapHealthPermission.READ_HEIGHT to HealthPermission.getReadPermission(HeightRecord::class),
         CapHealthPermission.READ_ACTIVE_CALORIES to HealthPermission.getReadPermission(ActiveCaloriesBurnedRecord::class),
         CapHealthPermission.READ_TOTAL_CALORIES to HealthPermission.getReadPermission(TotalCaloriesBurnedRecord::class),
         CapHealthPermission.READ_DISTANCE to HealthPermission.getReadPermission(DistanceRecord::class),
         CapHealthPermission.READ_WORKOUTS to HealthPermission.getReadPermission(ExerciseSessionRecord::class),
         CapHealthPermission.READ_HRV to HealthPermission.getReadPermission(HeartRateVariabilitySdnnRecord::class),
-        CapHealthPermission.READ_BLOOD_PRESSURE to HealthPermission.getReadPermission(BloodPressureRecord::class)
+        CapHealthPermission.READ_BLOOD_PRESSURE to HealthPermission.getReadPermission(BloodPressureRecord::class),
+        CapHealthPermission.READ_ROUTE to HealthPermission.getReadPermission(ExerciseSessionRecord::class),
+        CapHealthPermission.READ_MINDFULNESS to HealthPermission.getReadPermission(SleepSessionRecord::class)
     )
 
     override fun load() {
@@ -239,6 +244,12 @@ class HealthPlugin : Plugin() {
         }
     }
 
+    // Alias for iOS compatibility
+    @PluginMethod
+    fun openAppleHealthSettings(call: PluginCall) {
+        openHealthConnectSettings(call)
+    }
+
     // Open the Google Play Store to install Health Connect
     @PluginMethod
     fun showHealthConnectInPlayStore(call: PluginCall) {
@@ -283,9 +294,13 @@ class HealthPlugin : Plugin() {
                 val result = when (dataType) {
                     "heart-rate" -> readLatestHeartRate()
                     "weight" -> readLatestWeight()
+                    "height" -> readLatestHeight()
                     "steps" -> readLatestSteps()
                     "hrv" -> readLatestHrv()
                     "blood-pressure" -> readLatestBloodPressure()
+                    "distance" -> readLatestDistance()
+                    "active-calories" -> readLatestActiveCalories()
+                    "total-calories" -> readLatestTotalCalories()
                     else -> {
                         call.reject("Unsupported data type: $dataType")
                         return@launch
@@ -297,6 +312,31 @@ class HealthPlugin : Plugin() {
                 call.reject("Error fetching latest $dataType: ${e.message}")
             }
         }
+    }
+
+    // Convenience methods for specific data types
+    @PluginMethod
+    fun queryWeight(call: PluginCall) {
+        call.put("dataType", "weight")
+        queryLatestSample(call)
+    }
+
+    @PluginMethod
+    fun queryHeight(call: PluginCall) {
+        call.put("dataType", "height")
+        queryLatestSample(call)
+    }
+
+    @PluginMethod
+    fun queryHeartRate(call: PluginCall) {
+        call.put("dataType", "heart-rate")
+        queryLatestSample(call)
+    }
+
+    @PluginMethod
+    fun querySteps(call: PluginCall) {
+        call.put("dataType", "steps")
+        queryLatestSample(call)
     }
 
     private suspend fun readLatestHeartRate(): JSObject {
@@ -313,8 +353,9 @@ class HealthPlugin : Plugin() {
 
         val lastSample = record.samples.lastOrNull()
         return JSObject().apply {
-            put("timestamp", lastSample?.time?.toString() ?: "")
             put("value", lastSample?.beatsPerMinute ?: 0)
+            put("timestamp", (lastSample?.time?.epochSecond ?: 0) * 1000) // Convert to milliseconds like iOS
+            put("unit", "count/min")
         }
     }
 
@@ -330,8 +371,9 @@ class HealthPlugin : Plugin() {
         val result = healthConnectClient.readRecords(request)
         val record = result.records.firstOrNull() ?: throw Exception("No weight data found")
         return JSObject().apply {
-            put("timestamp", record.time.toString())
             put("value", record.weight.inKilograms)
+            put("timestamp", record.time.epochSecond * 1000) // Convert to milliseconds like iOS
+            put("unit", "kg")
         }
     }
 
@@ -347,9 +389,9 @@ class HealthPlugin : Plugin() {
         val result = healthConnectClient.readRecords(request)
         val record = result.records.firstOrNull() ?: throw Exception("No step data found")
         return JSObject().apply {
-            put("startDate", record.startTime.toString())
-            put("endDate", record.endTime.toString())
             put("value", record.count)
+            put("timestamp", record.endTime.epochSecond * 1000) // Convert to milliseconds like iOS
+            put("unit", "count")
         }
     }
 
@@ -365,8 +407,9 @@ class HealthPlugin : Plugin() {
         val result = healthConnectClient.readRecords(request)
         val record = result.records.firstOrNull() ?: throw Exception("No HRV data found")
         return JSObject().apply {
-            put("timestamp", record.time.toString())
             put("value", record.sdnnMillis)
+            put("timestamp", record.time.epochSecond * 1000) // Convert to milliseconds like iOS
+            put("unit", "ms")
         }
     }
 
@@ -382,9 +425,82 @@ class HealthPlugin : Plugin() {
         val result = healthConnectClient.readRecords(request)
         val record = result.records.firstOrNull() ?: throw Exception("No blood pressure data found")
         return JSObject().apply {
-            put("timestamp", record.time.toString())
             put("systolic", record.systolic.inMillimetersOfMercury)
             put("diastolic", record.diastolic.inMillimetersOfMercury)
+            put("timestamp", record.time.epochSecond * 1000) // Convert to milliseconds like iOS
+            put("unit", "mmHg")
+        }
+    }
+
+    private suspend fun readLatestHeight(): JSObject {
+        if (!hasPermission(CapHealthPermission.READ_HEIGHT)) {
+            throw Exception("Permission for height not granted")
+        }
+        val request = ReadRecordsRequest(
+            recordType = HeightRecord::class,
+            timeRangeFilter = TimeRangeFilter.after(Instant.EPOCH),
+            pageSize = 1
+        )
+        val result = healthConnectClient.readRecords(request)
+        val record = result.records.firstOrNull() ?: throw Exception("No height data found")
+        return JSObject().apply {
+            put("value", record.height.inMeters)
+            put("timestamp", record.time.epochSecond * 1000) // Convert to milliseconds like iOS
+            put("unit", "m")
+        }
+    }
+
+    private suspend fun readLatestDistance(): JSObject {
+        if (!hasPermission(CapHealthPermission.READ_DISTANCE)) {
+            throw Exception("Permission for distance not granted")
+        }
+        val request = ReadRecordsRequest(
+            recordType = DistanceRecord::class,
+            timeRangeFilter = TimeRangeFilter.after(Instant.EPOCH),
+            pageSize = 1
+        )
+        val result = healthConnectClient.readRecords(request)
+        val record = result.records.firstOrNull() ?: throw Exception("No distance data found")
+        return JSObject().apply {
+            put("value", record.distance.inMeters)
+            put("timestamp", record.time.epochSecond * 1000) // Convert to milliseconds like iOS
+            put("unit", "m")
+        }
+    }
+
+    private suspend fun readLatestActiveCalories(): JSObject {
+        if (!hasPermission(CapHealthPermission.READ_ACTIVE_CALORIES)) {
+            throw Exception("Permission for active calories not granted")
+        }
+        val request = ReadRecordsRequest(
+            recordType = ActiveCaloriesBurnedRecord::class,
+            timeRangeFilter = TimeRangeFilter.after(Instant.EPOCH),
+            pageSize = 1
+        )
+        val result = healthConnectClient.readRecords(request)
+        val record = result.records.firstOrNull() ?: throw Exception("No active calories data found")
+        return JSObject().apply {
+            put("value", record.activeCalories.inKilocalories)
+            put("timestamp", record.time.epochSecond * 1000) // Convert to milliseconds like iOS
+            put("unit", "kcal")
+        }
+    }
+
+    private suspend fun readLatestTotalCalories(): JSObject {
+        if (!hasPermission(CapHealthPermission.READ_TOTAL_CALORIES)) {
+            throw Exception("Permission for total calories not granted")
+        }
+        val request = ReadRecordsRequest(
+            recordType = TotalCaloriesBurnedRecord::class,
+            timeRangeFilter = TimeRangeFilter.after(Instant.EPOCH),
+            pageSize = 1
+        )
+        val result = healthConnectClient.readRecords(request)
+        val record = result.records.firstOrNull() ?: throw Exception("No total calories data found")
+        return JSObject().apply {
+            put("value", record.energy.inKilocalories)
+            put("timestamp", record.time.epochSecond * 1000) // Convert to milliseconds like iOS
+            put("unit", "kcal")
         }
     }
 

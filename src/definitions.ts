@@ -55,6 +55,32 @@ export interface HealthPlugin {
    * @param request
    */
   queryWorkouts(request: QueryWorkoutRequest): Promise<QueryWorkoutResponse>;
+
+  /**
+   * Query latest sample for a specific data type
+   * @param request
+   */
+  queryLatestSample(request: { dataType: string }): Promise<QueryLatestSampleResponse>;
+
+  /**
+   * Query latest weight sample
+   */
+  queryWeight(): Promise<QueryLatestSampleResponse>;
+
+  /**
+   * Query latest height sample
+   */
+  queryHeight(): Promise<QueryLatestSampleResponse>;
+
+  /**
+   * Query latest heart rate sample
+   */
+  queryHeartRate(): Promise<QueryLatestSampleResponse>;
+
+  /**
+   * Query latest steps sample
+   */
+  querySteps(): Promise<QueryLatestSampleResponse>;
 }
 
 export declare type HealthPermission =
@@ -133,4 +159,12 @@ export interface AggregatedSample {
   startDate: string;
   endDate: string;
   value: number;
+}
+
+export interface QueryLatestSampleResponse {
+  value?: number;
+  systolic?: number;
+  diastolic?: number;
+  timestamp: number;
+  unit: string;
 }

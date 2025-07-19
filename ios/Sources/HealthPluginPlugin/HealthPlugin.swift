@@ -17,7 +17,11 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "openAppleHealthSettings", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "queryAggregated", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "queryWorkouts", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "queryLatestSample", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "queryLatestSample", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "queryWeight", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "queryHeight", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "queryHeartRate", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "querySteps", returnType: CAPPluginReturnPromise)
     ]
     
     let healthStore = HKHealthStore()
@@ -100,6 +104,8 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
             call.reject("Missing data type")
             return
         }
+        
+        print("⚡️ [HealthPlugin] Querying latest sample for data type: \(dataTypeString)")
         // ---- Special handling for blood‑pressure correlation ----
         if dataTypeString == "blood-pressure" {
             guard let bpType = HKObjectType.correlationType(forIdentifier: .bloodPressure) else {
@@ -187,12 +193,14 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
 
         let query = HKSampleQuery(sampleType: type, predicate: predicate, limit: 1, sortDescriptors: [sortDescriptor]) { _, samples, error in
             
-            print("Samples count for \(dataTypeString):", samples?.count ?? 0)
+            print("⚡️ [HealthPlugin] Query completed for \(dataTypeString): \(samples?.count ?? 0) samples, error: \(error?.localizedDescription ?? "none")")
             
             guard let quantitySample = samples?.first as? HKQuantitySample else {
                 if let error = error {
+                    print("⚡️ [HealthPlugin] Error fetching \(dataTypeString): \(error.localizedDescription)")
                     call.reject("Error fetching latest sample", "NO_SAMPLE", error)
                 } else {
+                    print("⚡️ [HealthPlugin] No sample found for \(dataTypeString)")
                     call.reject("No sample found", "NO_SAMPLE")
                 }
                 return
@@ -215,6 +223,8 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
             let value = quantitySample.quantity.doubleValue(for: unit)
             let timestamp = quantitySample.startDate.timeIntervalSince1970 * 1000
 
+            print("⚡️ [HealthPlugin] Successfully fetched \(dataTypeString): value=\(value), unit=\(unit.unitString)")
+
             call.resolve([
                 "value": value,
                 "timestamp": timestamp,
@@ -223,6 +233,27 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
         }
 
         healthStore.execute(query)
+    }
+    
+    // Convenience methods for specific data types
+    @objc func queryWeight(_ call: CAPPluginCall) {
+        call.setString("dataType", "weight")
+        queryLatestSample(call)
+    }
+    
+    @objc func queryHeight(_ call: CAPPluginCall) {
+        call.setString("dataType", "height")
+        queryLatestSample(call)
+    }
+    
+    @objc func queryHeartRate(_ call: CAPPluginCall) {
+        call.setString("dataType", "heart-rate")
+        queryLatestSample(call)
+    }
+    
+    @objc func querySteps(_ call: CAPPluginCall) {
+        call.setString("dataType", "steps")
+        queryLatestSample(call)
     }
     
     @objc func openAppleHealthSettings(_ call: CAPPluginCall) {
@@ -290,7 +321,7 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
             return [HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)].compactMap{$0}
         case "workouts":
             return [HKObjectType.workoutType()].compactMap{$0}
-        case "heart-rate", "heartrate":
+        case "heart-rate", "heartrate", "heart_rate":
             return  [HKObjectType.quantityType(forIdentifier: .heartRate)].compactMap{$0}
         case "route":
             return  [HKSeriesType.workoutRoute()].compactMap{$0}
@@ -303,9 +334,9 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
             ].compactMap{$0}
         case "mindfulness":
             return [HKObjectType.categoryType(forIdentifier: .mindfulSession)!].compactMap{$0}
-        case "hrv":
+        case "hrv", "heart_rate_variability_sdnn":
             return [HKObjectType.quantityType(forIdentifier: .heartRateVariabilitySDNN)].compactMap { $0 }
-        case "blood-pressure", "bloodpressure":
+        case "blood-pressure", "bloodpressure", "blood_pressure_systolic", "blood_pressure_diastolic":
             return [
                 HKObjectType.quantityType(forIdentifier: .bloodPressureSystolic),
                 HKObjectType.quantityType(forIdentifier: .bloodPressureDiastolic)

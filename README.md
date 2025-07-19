@@ -112,6 +112,11 @@ This setup ensures your WebView will load HTTPS content securely and complies wi
 * [`showHealthConnectInPlayStore()`](#showhealthconnectinplaystore)
 * [`queryAggregated(...)`](#queryaggregated)
 * [`queryWorkouts(...)`](#queryworkouts)
+* [`queryLatestSample(...)`](#querylatestsample)
+* [`queryWeight()`](#queryweight)
+* [`queryHeight()`](#queryheight)
+* [`queryHeartRate()`](#queryheartrate)
+* [`querySteps()`](#querysteps)
 * [Interfaces](#interfaces)
 * [Type Aliases](#type-aliases)
 
@@ -245,6 +250,75 @@ Query workouts
 --------------------
 
 
+### queryLatestSample(...)
+
+```typescript
+queryLatestSample(request: { dataType: string; }) => Promise<QueryLatestSampleResponse>
+```
+
+Query latest sample for a specific data type
+
+| Param         | Type                               |
+| ------------- | ---------------------------------- |
+| **`request`** | <code>{ dataType: string; }</code> |
+
+**Returns:** <code>Promise&lt;<a href="#querylatestsampleresponse">QueryLatestSampleResponse</a>&gt;</code>
+
+--------------------
+
+
+### queryWeight()
+
+```typescript
+queryWeight() => Promise<QueryLatestSampleResponse>
+```
+
+Query latest weight sample
+
+**Returns:** <code>Promise&lt;<a href="#querylatestsampleresponse">QueryLatestSampleResponse</a>&gt;</code>
+
+--------------------
+
+
+### queryHeight()
+
+```typescript
+queryHeight() => Promise<QueryLatestSampleResponse>
+```
+
+Query latest height sample
+
+**Returns:** <code>Promise&lt;<a href="#querylatestsampleresponse">QueryLatestSampleResponse</a>&gt;</code>
+
+--------------------
+
+
+### queryHeartRate()
+
+```typescript
+queryHeartRate() => Promise<QueryLatestSampleResponse>
+```
+
+Query latest heart rate sample
+
+**Returns:** <code>Promise&lt;<a href="#querylatestsampleresponse">QueryLatestSampleResponse</a>&gt;</code>
+
+--------------------
+
+
+### querySteps()
+
+```typescript
+querySteps() => Promise<QueryLatestSampleResponse>
+```
+
+Query latest steps sample
+
+**Returns:** <code>Promise&lt;<a href="#querylatestsampleresponse">QueryLatestSampleResponse</a>&gt;</code>
+
+--------------------
+
+
 ### Interfaces
 
 
@@ -340,6 +414,17 @@ Query workouts
 | **`includeHeartRate`** | <code>boolean</code> |
 | **`includeRoute`**     | <code>boolean</code> |
 | **`includeSteps`**     | <code>boolean</code> |
+
+
+#### QueryLatestSampleResponse
+
+| Prop            | Type                |
+| --------------- | ------------------- |
+| **`value`**     | <code>number</code> |
+| **`systolic`**  | <code>number</code> |
+| **`diastolic`** | <code>number</code> |
+| **`timestamp`** | <code>number</code> |
+| **`unit`**      | <code>string</code> |
 
 
 ### Type Aliases
