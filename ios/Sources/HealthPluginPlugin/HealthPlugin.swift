@@ -237,23 +237,26 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
     
     // Convenience methods for specific data types
     @objc func queryWeight(_ call: CAPPluginCall) {
-        call.setString("dataType", "weight")
-        queryLatestSample(call)
+        queryLatestSampleWithType(call, dataType: "weight")
     }
     
     @objc func queryHeight(_ call: CAPPluginCall) {
-        call.setString("dataType", "height")
-        queryLatestSample(call)
+        queryLatestSampleWithType(call, dataType: "height")
     }
     
     @objc func queryHeartRate(_ call: CAPPluginCall) {
-        call.setString("dataType", "heart-rate")
-        queryLatestSample(call)
+        queryLatestSampleWithType(call, dataType: "heart-rate")
     }
     
     @objc func querySteps(_ call: CAPPluginCall) {
-        call.setString("dataType", "steps")
-        queryLatestSample(call)
+        queryLatestSampleWithType(call, dataType: "steps")
+    }
+    
+    private func queryLatestSampleWithType(_ call: CAPPluginCall, dataType: String) {
+        let params = NSMutableDictionary(dictionary: call.options ?? [:])
+        params["dataType"] = dataType
+        let proxyCall = CAPPluginCall(callbackId: call.callbackId, options: params as? [String: Any], success: call.success, error: call.error)
+        queryLatestSample(proxyCall)
     }
     
     @objc func openAppleHealthSettings(_ call: CAPPluginCall) {
