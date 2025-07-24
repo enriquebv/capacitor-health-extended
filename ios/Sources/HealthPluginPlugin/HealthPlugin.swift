@@ -253,9 +253,36 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
     }
     
     private func queryLatestSampleWithType(_ call: CAPPluginCall, dataType: String) {
-        let params = NSMutableDictionary(dictionary: call.options ?? [:])
+        // Safely coerce the original options into a [String: Any] JSObject.
+        let originalOptions = call.options as? [String: Any] ?? [:]
+        var params = originalOptions
         params["dataType"] = dataType
-        let proxyCall = CAPPluginCall(callbackId: call.callbackId, options: params as? [String: Any], success: call.success, error: call.error)
+
+        // Create a proxy CAPPluginCall using the CURRENT (Capacitor 6) designated initializer.
+        // NOTE: The older init(callbackId:options:success:error:) is deprecated and *failable*,
+        // so we use the newer initializer that requires a method name. Guard against failure.
+        guard let proxyCall = CAPPluginCall(
+            callbackId: call.callbackId,
+            methodName: "queryLatestSample", // required in new API
+            options: params,
+            success: { result, _ in
+                // Forward the resolved data back to the original JS caller.
+                call.resolve(result?.data ?? [:])
+            },
+            error: { capError in
+                // Forward the error to the original call in the legacy reject format.
+                if let capError = capError {
+                    call.reject(capError.message, capError.code, capError.error, capError.data)
+                } else {
+                    call.reject("Unknown native error")
+                }
+            }
+        ) else {
+            call.reject("Failed to create proxy call")
+            return
+        }
+
+        // Delegate the actual HealthKit fetch to the common implementation.
         queryLatestSample(proxyCall)
     }
     
