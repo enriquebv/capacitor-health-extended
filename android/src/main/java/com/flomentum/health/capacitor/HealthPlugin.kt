@@ -270,7 +270,7 @@ class HealthPlugin : Plugin() {
     private fun getMetricAndMapper(dataType: String): MetricAndMapper {
         return when (dataType) {
             "steps" -> metricAndMapper("steps", CapHealthPermission.READ_STEPS, StepsRecord.COUNT_TOTAL) { it?.toDouble() }
-            "active-calories" -> metricAndMapper(
+            "active-calories", "activeCalories" -> metricAndMapper(
                 "calories",
                 CapHealthPermission.READ_ACTIVE_CALORIES,
                 ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL
@@ -301,7 +301,7 @@ class HealthPlugin : Plugin() {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val result = when (dataType) {
-                    "heart-rate" -> readLatestHeartRate()
+                    "heart-rate", "heartRate" -> readLatestHeartRate()
                     "weight" -> readLatestWeight()
                     "height" -> readLatestHeight()
                     "steps" -> readLatestSteps()
@@ -370,11 +370,11 @@ class HealthPlugin : Plugin() {
             timeRangeFilter = TimeRangeFilter.after(Instant.EPOCH),
             pageSize = 1
         )
-        val result = healthConnectClient.readRecords(request)
-        val record = result.records.firstOrNull() ?: throw Exception("No weight data found")
+        val record = healthConnectClient.readRecords(request).records.firstOrNull()
+
         return JSObject().apply {
-            put("value", record.weight.inKilograms)
-            put("timestamp", record.time.epochSecond * 1000) // Convert to milliseconds like iOS
+            put("value", record?.weight?.inKilograms ?: 0)
+            put("timestamp", (record?.time?.epochSecond ?: 0) * 1000)
             put("unit", "kg")
         }
     }
@@ -388,11 +388,10 @@ class HealthPlugin : Plugin() {
             timeRangeFilter = TimeRangeFilter.after(Instant.EPOCH),
             pageSize = 1
         )
-        val result = healthConnectClient.readRecords(request)
-        val record = result.records.firstOrNull() ?: throw Exception("No step data found")
+        val record = healthConnectClient.readRecords(request).records.firstOrNull()
         return JSObject().apply {
-            put("value", record.count)
-            put("timestamp", record.endTime.epochSecond * 1000) // Convert to milliseconds like iOS
+            put("value", record?.count ?: 0)
+            put("timestamp", (record?.endTime?.epochSecond ?: 0) * 1000)
             put("unit", "count")
         }
     }
@@ -406,11 +405,11 @@ class HealthPlugin : Plugin() {
             timeRangeFilter = TimeRangeFilter.after(Instant.EPOCH),
             pageSize = 1
         )
-        val result = healthConnectClient.readRecords(request)
-        val record = result.records.firstOrNull() ?: throw Exception("No HRV data found")
+        val record = healthConnectClient.readRecords(request).records.firstOrNull()
+
         return JSObject().apply {
-            put("value", record.heartRateVariabilityMillis)
-            put("timestamp", record.time.epochSecond * 1000) // Convert to milliseconds like iOS
+            put("value", record?.heartRateVariabilityMillis ?: 0)
+            put("timestamp", (record?.time?.epochSecond ?: 0) * 1000)
             put("unit", "ms")
         }
     }
@@ -424,12 +423,12 @@ class HealthPlugin : Plugin() {
             timeRangeFilter = TimeRangeFilter.after(Instant.EPOCH),
             pageSize = 1
         )
-        val result = healthConnectClient.readRecords(request)
-        val record = result.records.firstOrNull() ?: throw Exception("No blood pressure data found")
+        val record = healthConnectClient.readRecords(request).records.firstOrNull()
+
         return JSObject().apply {
-            put("systolic", record.systolic.inMillimetersOfMercury)
-            put("diastolic", record.diastolic.inMillimetersOfMercury)
-            put("timestamp", record.time.epochSecond * 1000) // Convert to milliseconds like iOS
+            put("systolic", record?.systolic?.inMillimetersOfMercury ?: 0)
+            put("diastolic", record?.diastolic?.inMillimetersOfMercury ?: 0)
+            put("timestamp", (record?.time?.epochSecond ?: 0) * 1000)
             put("unit", "mmHg")
         }
     }
@@ -443,11 +442,11 @@ class HealthPlugin : Plugin() {
             timeRangeFilter = TimeRangeFilter.after(Instant.EPOCH),
             pageSize = 1
         )
-        val result = healthConnectClient.readRecords(request)
-        val record = result.records.firstOrNull() ?: throw Exception("No height data found")
+        val record = healthConnectClient.readRecords(request).records.firstOrNull()
+
         return JSObject().apply {
-            put("value", record.height.inMeters)
-            put("timestamp", record.time.epochSecond * 1000) // Convert to milliseconds like iOS
+            put("value", record?.height?.inMeters ?: 0)
+            put("timestamp", (record?.time?.epochSecond ?: 0) * 1000)
             put("unit", "m")
         }
     }
@@ -461,11 +460,10 @@ class HealthPlugin : Plugin() {
             timeRangeFilter = TimeRangeFilter.after(Instant.EPOCH),
             pageSize = 1
         )
-        val result = healthConnectClient.readRecords(request)
-        val record = result.records.firstOrNull() ?: throw Exception("No distance data found")
+        val record = healthConnectClient.readRecords(request).records.firstOrNull()
         return JSObject().apply {
-            put("value", record.distance.inMeters)
-            put("timestamp", record.endTime.epochSecond * 1000) // Convert to milliseconds like iOS
+            put("value", record?.distance?.inMeters ?: 0)
+            put("timestamp", (record?.endTime?.epochSecond ?: 0) * 1000)
             put("unit", "m")
         }
     }
@@ -479,11 +477,10 @@ class HealthPlugin : Plugin() {
             timeRangeFilter = TimeRangeFilter.after(Instant.EPOCH),
             pageSize = 1
         )
-        val result = healthConnectClient.readRecords(request)
-        val record = result.records.firstOrNull() ?: throw Exception("No active calories data found")
+        val record = healthConnectClient.readRecords(request).records.firstOrNull()
         return JSObject().apply {
-            put("value", record.energy.inKilocalories)
-            put("timestamp", record.endTime.epochSecond * 1000) // Convert to milliseconds like iOS
+            put("value", record?.energy?.inKilocalories ?: 0)
+            put("timestamp", (record?.endTime?.epochSecond ?: 0) * 1000)
             put("unit", "kcal")
         }
     }
@@ -497,11 +494,10 @@ class HealthPlugin : Plugin() {
             timeRangeFilter = TimeRangeFilter.after(Instant.EPOCH),
             pageSize = 1
         )
-        val result = healthConnectClient.readRecords(request)
-        val record = result.records.firstOrNull() ?: throw Exception("No total calories data found")
+        val record = healthConnectClient.readRecords(request).records.firstOrNull()
         return JSObject().apply {
-            put("value", record.energy.inKilocalories)
-            put("timestamp", record.endTime.epochSecond * 1000) // Convert to milliseconds like iOS
+            put("value", record?.energy?.inKilocalories ?: 0)
+            put("timestamp", (record?.endTime?.epochSecond ?: 0) * 1000)
             put("unit", "kcal")
         }
     }
@@ -623,7 +619,7 @@ class HealthPlugin : Plugin() {
         )
 
         return response.map {
-            val mappedValue = metricAndMapper.getValue(it.result)
+            val mappedValue = metricAndMapper.getValue(it.result) ?: 0.0
             AggregatedSample(it.startTime, it.endTime, mappedValue)
         }
 
