@@ -1,6 +1,8 @@
 # capacitor-health-extended
 
-Capacitor plugin to query data from Apple Health and Google Health Connect
+Cross‑platform Capacitor plugin for reading data from Apple HealthKit and
+Google Health Connect. The plugin requires **Node.js 20+** and is compatible
+with **Capacitor 7**.
 
 ## Thanks and attribution
 
@@ -9,6 +11,19 @@ Forked from [capacitor-health](https://github.,com/mley/capacitor-health) and as
 - Big thanks to [@dariosalvi78](https://github.com/dariosalvi78) for the support.
 
 Thanks [@mley](https://github.com/mley) for the ground work. The goal of this fork is to extend functionality and datapoints and keep up with the ever-changing brand-new Android Health Connect Platform. I'm hoping to create platform parity for capacitor API-based health data access.
+
+## Requirements
+
+- Node.js 20 or newer
+- Capacitor 7
+
+## Features
+
+- Check if health functionality is available on the device
+- Request and verify health permissions
+- Query aggregated data like steps or calories
+- Retrieve workout sessions with optional route and heart rate data
+- Fetch the latest sample for steps, heart‑rate, or weight
 
 ## Install
 
@@ -98,10 +113,9 @@ npx cap sync
 ```
 
 This setup ensures your WebView will load HTTPS content securely and complies with Android's default network security policy.
-```
 
 ## API
-
+```
 <docgen-index>
 
 * [`isHealthAvailable()`](#ishealthavailable)
@@ -121,7 +135,7 @@ This setup ensures your WebView will load HTTPS content securely and complies wi
 * [Type Aliases](#type-aliases)
 
 </docgen-index>
-
+```
 <docgen-api>
 <!--Update the source file JSDoc comments and rerun docgen to update the docs below-->
 
@@ -253,6 +267,17 @@ Query workouts
 ### queryLatestSample(...)
 
 ```typescript
+queryLatestSample(options: LatestSampleRequest) => Promise<LatestSampleResponse>
+```
+
+Query the latest single sample for the provided data type
+
+| Param         | Type                                                                | Description                               |
+| ------------- | ------------------------------------------------------------------- | ----------------------------------------- |
+| **`options`** | <code><a href="#latestsamplerequest">LatestSampleRequest</a></code> | options containing the data type to query |
+
+**Returns:** <code>Promise&lt;<a href="#latestsampleresponse">LatestSampleResponse</a>&gt;</code>
+=======
 queryLatestSample(request: { dataType: string; }) => Promise<QueryLatestSampleResponse>
 ```
 
@@ -425,7 +450,6 @@ Query latest steps sample
 | **`diastolic`** | <code>number</code> |
 | **`timestamp`** | <code>number</code> |
 | **`unit`**      | <code>string</code> |
-
 
 ### Type Aliases
 
