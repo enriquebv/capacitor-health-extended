@@ -267,17 +267,6 @@ Query workouts
 ### queryLatestSample(...)
 
 ```typescript
-queryLatestSample(options: LatestSampleRequest) => Promise<LatestSampleResponse>
-```
-
-Query the latest single sample for the provided data type
-
-| Param         | Type                                                                | Description                               |
-| ------------- | ------------------------------------------------------------------- | ----------------------------------------- |
-| **`options`** | <code><a href="#latestsamplerequest">LatestSampleRequest</a></code> | options containing the data type to query |
-
-**Returns:** <code>Promise&lt;<a href="#latestsampleresponse">LatestSampleResponse</a>&gt;</code>
-=======
 queryLatestSample(request: { dataType: string; }) => Promise<QueryLatestSampleResponse>
 ```
 
@@ -450,6 +439,7 @@ Query latest steps sample
 | **`diastolic`** | <code>number</code> |
 | **`timestamp`** | <code>number</code> |
 | **`unit`**      | <code>string</code> |
+
 
 ### Type Aliases
 
