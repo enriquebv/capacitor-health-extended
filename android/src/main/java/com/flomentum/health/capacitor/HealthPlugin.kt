@@ -144,13 +144,19 @@ class HealthPlugin : Plugin() {
         call.resolve(result)
     }
 
-    // Helper to ensure client is initialized
+    // Helper to ensure HealthConnectClient is ready; attempts init lazily
     private fun ensureClientInitialized(call: PluginCall): Boolean {
-        if (!available) {
-            call.reject("Health Connect client not initialized. Call isHealthAvailable() first.")
-            return false
+        if (available) return true
+
+        return try {
+            healthConnectClient = HealthConnectClient.getOrCreate(context)
+            available = true
+            true
+        } catch (e: Exception) {
+            Log.e(tag, "Failed to initialise HealthConnectClient", e)
+            call.reject("Health Connect is not available on this device.")
+            false
         }
-        return true
     }
 
     // Check if a set of permissions are granted
