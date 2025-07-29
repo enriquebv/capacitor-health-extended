@@ -6,7 +6,11 @@ with **Capacitor 7**.
 
 ## Thanks and attribution
 
-Some parts, concepts and ideas are borrowed from [cordova-plugin-health](https://github.com/dariosalvi78/cordova-plugin-health/). Big thanks to [@dariosalvi78](https://github.com/dariosalvi78) for the support.
+Forked from [capacitor-health](https://github.,com/mley/capacitor-health) and as such...
+- Some parts, concepts and ideas are borrowed from [cordova-plugin-health](https://github.com/dariosalvi78/cordova-plugin-health/).
+- Big thanks to [@dariosalvi78](https://github.com/dariosalvi78) for the support.
+
+Thanks [@mley](https://github.com/mley) for the ground work. The goal of this fork is to extend functionality and datapoints and keep up with the ever-changing brand-new Android Health Connect Platform. I'm hoping to create platform parity for capacitor API-based health data access.
 
 ## Requirements
 
@@ -38,48 +42,80 @@ npx cap sync
 
 ### Android
 
-* Android Manifest in application tag
+* Android Manifest in root tag right after opening manifest tag
 ```xml
-        <!-- For supported versions through Android 13, create an activity to show the rationale
-    of Health Connect permissions once users click the privacy policy link. -->
-        <activity
-            android:name="com.flomentum.health.capacitor.PermissionsRationaleActivity"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
-            </intent-filter>
-        </activity>
-
-        <!-- For versions starting Android 14, create an activity alias to show the rationale
-         of Health Connect permissions once users click the privacy policy link. -->
-        <activity-alias
-            android:name="ViewPermissionUsageActivity"
-            android:exported="true"
-            android:targetActivity="com.flomentum.health.capacitor.PermissionsRationaleActivity"
-            android:permission="android.permission.START_VIEW_PERMISSION_USAGE">
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW_PERMISSION_USAGE" />
-                <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
-            </intent-filter>
-        </activity-alias>
-```
-
-* Android Manifest in root tag
-```xml
+    <!-- Make Health Connect visible to detect installation -->
     <queries>
         <package android:name="com.google.android.apps.healthdata" />
     </queries>
-    
+
+    <!-- Declare permissions you’ll request -->
     <uses-permission android:name="android.permission.health.READ_STEPS" />
     <uses-permission android:name="android.permission.health.READ_ACTIVE_CALORIES_BURNED" />
+    <uses-permission android:name="android.permission.health.READ_TOTAL_CALORIES_BURNED" />
     <uses-permission android:name="android.permission.health.READ_DISTANCE" />
     <uses-permission android:name="android.permission.health.READ_EXERCISE" />
     <uses-permission android:name="android.permission.health.READ_EXERCISE_ROUTE" />
     <uses-permission android:name="android.permission.health.READ_HEART_RATE" />
+    <uses-permission android:name="android.permission.health.READ_WEIGHT" />
+    <uses-permission android:name="android.permission.health.READ_HEIGHT" />
+    <uses-permission android:name="android.permission.health.READ_HEART_RATE_VARIABILITY" />
+    <uses-permission android:name="android.permission.health.READ_BLOOD_PRESSURE" />
 ```
 
-## API
 
+* Android Manifest in application tag
+```xml
+    <!-- Handle Health Connect rationale (Android 13-) -->
+    <activity
+        android:name=".PermissionsRationaleActivity"
+        android:exported="true">
+        <intent-filter>
+            <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE"/>
+            <category android:name="android.intent.category.HEALTH_PERMISSIONS"/>
+        </intent-filter>
+    </activity>
+
+    <!-- Handle Android 14+ alias -->
+    <activity-alias
+        android:name="ViewPermissionUsageActivity"
+        android:exported="true"
+        android:targetActivity=".PermissionsRationaleActivity"
+        android:permission="android.permission.START_VIEW_PERMISSION_USAGE">
+        <intent-filter>
+            <action android:name="android.intent.action.VIEW_PERMISSION_USAGE"/>
+            <category android:name="android.intent.category.HEALTH_PERMISSIONS"/>
+        </intent-filter>
+    </activity-alias>
+```
+
+* Android Manifest in application tag for secure WebView content
+```xml
+    <!-- Configure secure WebView and allow HTTPS loading -->
+    <application
+        android:usesCleartextTraffic="false"
+        android:networkSecurityConfig="@xml/network_security_config">
+        ...
+    </application>
+```
+
+* Create `res/xml/network_security_config.xml` with:
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+  <base-config cleartextTrafficPermitted="false">
+    <trust-anchors>
+      <certificates src="system"/>
+    </trust-anchors>
+  </base-config>
+</network-security-config>
+```
+
+This setup ensures your WebView will load HTTPS content securely and complies with Android's default network security policy.
+
+## API
+```
 <docgen-index>
 
 * [`isHealthAvailable()`](#ishealthavailable)
@@ -99,7 +135,7 @@ npx cap sync
 * [Type Aliases](#type-aliases)
 
 </docgen-index>
-
+```
 <docgen-api>
 <!--Update the source file JSDoc comments and rerun docgen to update the docs below-->
 
@@ -241,6 +277,69 @@ Query the latest single sample for the provided data type
 | **`options`** | <code><a href="#latestsamplerequest">LatestSampleRequest</a></code> | options containing the data type to query |
 
 **Returns:** <code>Promise&lt;<a href="#latestsampleresponse">LatestSampleResponse</a>&gt;</code>
+=======
+queryLatestSample(request: { dataType: string; }) => Promise<QueryLatestSampleResponse>
+```
+
+Query latest sample for a specific data type
+
+| Param         | Type                               |
+| ------------- | ---------------------------------- |
+| **`request`** | <code>{ dataType: string; }</code> |
+
+**Returns:** <code>Promise&lt;<a href="#querylatestsampleresponse">QueryLatestSampleResponse</a>&gt;</code>
+
+--------------------
+
+
+### queryWeight()
+
+```typescript
+queryWeight() => Promise<QueryLatestSampleResponse>
+```
+
+Query latest weight sample
+
+**Returns:** <code>Promise&lt;<a href="#querylatestsampleresponse">QueryLatestSampleResponse</a>&gt;</code>
+
+--------------------
+
+
+### queryHeight()
+
+```typescript
+queryHeight() => Promise<QueryLatestSampleResponse>
+```
+
+Query latest height sample
+
+**Returns:** <code>Promise&lt;<a href="#querylatestsampleresponse">QueryLatestSampleResponse</a>&gt;</code>
+
+--------------------
+
+
+### queryHeartRate()
+
+```typescript
+queryHeartRate() => Promise<QueryLatestSampleResponse>
+```
+
+Query latest heart rate sample
+
+**Returns:** <code>Promise&lt;<a href="#querylatestsampleresponse">QueryLatestSampleResponse</a>&gt;</code>
+
+--------------------
+
+
+### querySteps()
+
+```typescript
+querySteps() => Promise<QueryLatestSampleResponse>
+```
+
+Query latest steps sample
+
+**Returns:** <code>Promise&lt;<a href="#querylatestsampleresponse">QueryLatestSampleResponse</a>&gt;</code>
 
 --------------------
 
@@ -280,12 +379,12 @@ Query the latest single sample for the provided data type
 
 #### QueryAggregatedRequest
 
-| Prop            | Type                                                       |
-| --------------- | ---------------------------------------------------------- |
-| **`startDate`** | <code>string</code>                                        |
-| **`endDate`**   | <code>string</code>                                        |
-| **`dataType`**  | <code>'steps' \| 'active-calories' \| 'mindfulness'</code> |
-| **`bucket`**    | <code>string</code>                                        |
+| Prop            | Type                                                                                    |
+| --------------- | --------------------------------------------------------------------------------------- |
+| **`startDate`** | <code>string</code>                                                                     |
+| **`endDate`**   | <code>string</code>                                                                     |
+| **`dataType`**  | <code>'steps' \| 'active-calories' \| 'mindfulness' \| 'hrv' \| 'blood-pressure'</code> |
+| **`bucket`**    | <code>string</code>                                                                     |
 
 
 #### QueryWorkoutResponse
@@ -342,29 +441,21 @@ Query the latest single sample for the provided data type
 | **`includeSteps`**     | <code>boolean</code> |
 
 
-#### LatestSampleResponse
+#### QueryLatestSampleResponse
 
 | Prop            | Type                |
 | --------------- | ------------------- |
 | **`value`**     | <code>number</code> |
-| **`timestamp`** | <code>string</code> |
-| **`startDate`** | <code>string</code> |
-| **`endDate`**   | <code>string</code> |
+| **`systolic`**  | <code>number</code> |
+| **`diastolic`** | <code>number</code> |
+| **`timestamp`** | <code>number</code> |
 | **`unit`**      | <code>string</code> |
-
-
-#### LatestSampleRequest
-
-| Prop           | Type                                             |
-| -------------- | ------------------------------------------------ |
-| **`dataType`** | <code>'steps' \| 'heart-rate' \| 'weight'</code> |
-
 
 ### Type Aliases
 
 
 #### HealthPermission
 
-<code>'READ_STEPS' | 'READ_WORKOUTS' | 'READ_ACTIVE_CALORIES' | 'READ_TOTAL_CALORIES' | 'READ_DISTANCE' | 'READ_WEIGHT' | 'READ_HEART_RATE' | 'READ_ROUTE' | 'READ_MINDFULNESS'</code>
+<code>'READ_STEPS' | 'READ_WORKOUTS' | 'READ_ACTIVE_CALORIES' | 'READ_TOTAL_CALORIES' | 'READ_DISTANCE' | 'READ_WEIGHT' | 'READ_HEIGHT' | 'READ_HEART_RATE' | 'READ_ROUTE' | 'READ_MINDFULNESS' | 'READ_HRV' | 'READ_BLOOD_PRESSURE'</code>
 
 </docgen-api>

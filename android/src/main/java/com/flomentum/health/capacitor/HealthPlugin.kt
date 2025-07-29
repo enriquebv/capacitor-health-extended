@@ -2,6 +2,7 @@ package com.flomentum.health.capacitor
 
 import android.content.Intent
 import android.util.Log
+import androidx.activity.result.ActivityResultLauncher
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.PermissionController
@@ -31,7 +32,8 @@ import java.util.concurrent.atomic.AtomicReference
 import androidx.core.net.toUri
 
 enum class CapHealthPermission {
-    READ_STEPS, READ_WORKOUTS, READ_HEART_RATE, READ_ACTIVE_CALORIES, READ_TOTAL_CALORIES, READ_DISTANCE, READ_WEIGHT;
+    READ_STEPS, READ_WORKOUTS, READ_HEART_RATE, READ_ACTIVE_CALORIES, READ_TOTAL_CALORIES, READ_DISTANCE, READ_WEIGHT
+    , READ_HRV, READ_BLOOD_PRESSURE, READ_HEIGHT, READ_ROUTE, READ_MINDFULNESS;
 
     companion object {
         fun from(s: String): CapHealthPermission? {
@@ -49,11 +51,16 @@ enum class CapHealthPermission {
     permissions = [
         Permission(alias = "READ_STEPS", strings = ["android.permission.health.READ_STEPS"]),
         Permission(alias = "READ_WEIGHT", strings = ["android.permission.health.READ_WEIGHT"]),
+        Permission(alias = "READ_HEIGHT", strings = ["android.permission.health.READ_HEIGHT"]),
         Permission(alias = "READ_WORKOUTS", strings = ["android.permission.health.READ_EXERCISE"]),
         Permission(alias = "READ_DISTANCE", strings = ["android.permission.health.READ_DISTANCE"]),
         Permission(alias = "READ_ACTIVE_CALORIES", strings = ["android.permission.health.READ_ACTIVE_CALORIES_BURNED"]),
         Permission(alias = "READ_TOTAL_CALORIES", strings = ["android.permission.health.READ_TOTAL_CALORIES_BURNED"]),
-        Permission(alias = "READ_HEART_RATE", strings = ["android.permission.health.READ_HEART_RATE"])
+        Permission(alias = "READ_HEART_RATE", strings = ["android.permission.health.READ_HEART_RATE"]),
+        Permission(alias = "READ_HRV", strings = ["android.permission.health.READ_HEART_RATE_VARIABILITY"]),
+        Permission(alias = "READ_BLOOD_PRESSURE", strings = ["android.permission.health.READ_BLOOD_PRESSURE"]),
+        Permission(alias = "READ_ROUTE", strings = ["android.permission.health.READ_EXERCISE"]),
+        Permission(alias = "READ_MINDFULNESS", strings = ["android.permission.health.READ_SLEEP"])
     ]
 )
 
@@ -65,21 +72,56 @@ class HealthPlugin : Plugin() {
     private lateinit var healthConnectClient: HealthConnectClient
     private var available: Boolean = false
 
-    private lateinit var permissionsLauncher: androidx.activity.result.ActivityResultLauncher<Set<String>>
+    private lateinit var permissionsLauncher: ActivityResultLauncher<Set<String>>
+
+    private val permissionMapping: Map<CapHealthPermission, String> = mapOf(
+        CapHealthPermission.READ_STEPS to HealthPermission.getReadPermission(StepsRecord::class),
+        CapHealthPermission.READ_HEART_RATE to HealthPermission.getReadPermission(HeartRateRecord::class),
+        CapHealthPermission.READ_WEIGHT to HealthPermission.getReadPermission(WeightRecord::class),
+        CapHealthPermission.READ_HEIGHT to HealthPermission.getReadPermission(HeightRecord::class),
+        CapHealthPermission.READ_ACTIVE_CALORIES to HealthPermission.getReadPermission(ActiveCaloriesBurnedRecord::class),
+        CapHealthPermission.READ_TOTAL_CALORIES to HealthPermission.getReadPermission(TotalCaloriesBurnedRecord::class),
+        CapHealthPermission.READ_DISTANCE to HealthPermission.getReadPermission(DistanceRecord::class),
+        CapHealthPermission.READ_WORKOUTS to HealthPermission.getReadPermission(ExerciseSessionRecord::class),
+        CapHealthPermission.READ_HRV to HealthPermission.getReadPermission(HeartRateVariabilityRmssdRecord::class),
+        CapHealthPermission.READ_BLOOD_PRESSURE to HealthPermission.getReadPermission(BloodPressureRecord::class),
+        CapHealthPermission.READ_ROUTE to HealthPermission.getReadPermission(ExerciseSessionRecord::class),
+        CapHealthPermission.READ_MINDFULNESS to HealthPermission.getReadPermission(SleepSessionRecord::class)
+    )
 
     override fun load() {
         super.load()
+        initializePermissionLauncher()
+    }
+
+    private fun initializePermissionLauncher() {
         permissionsLauncher = bridge.activity.registerForActivityResult(
             PermissionController.createRequestPermissionResultContract()
         ) { grantedPermissions: Set<String> ->
-            Log.i(tag, "Permissions callback: $grantedPermissions")
-            requestPermissionContext.get()?.let { context ->
-                val result = JSObject().apply {
-                    put("permissions", JSArray(grantedPermissions))
-                }
-                context.pluginCal.resolve(result)
-                requestPermissionContext.set(null)
-            }
+            onPermissionsResult(grantedPermissions)
+        }
+    }
+
+    private fun onPermissionsResult(grantedPermissions: Set<String>) {
+        Log.i(tag, "Permissions callback: $grantedPermissions")
+        val context = requestPermissionContext.getAndSet(null) ?: return
+
+        val result = buildPermissionsResult(context, grantedPermissions)
+        context.pluginCal.resolve(result)
+    }
+
+    private fun buildPermissionsResult(
+        context: RequestPermissionContext,
+        grantedPermissions: Set<String>
+    ): JSObject {
+        val perms = JSObject()
+        context.requestedPermissions.forEach { cap ->
+            val hp = permissionMapping[cap]
+            val isGranted = hp != null && grantedPermissions.contains(hp)
+            perms.put(cap.name, isGranted)
+        }
+        return JSObject().apply {
+            put("permissions", perms)
         }
     }
 
@@ -102,23 +144,19 @@ class HealthPlugin : Plugin() {
         call.resolve(result)
     }
 
-    private val permissionMapping: Map<CapHealthPermission, String> = mapOf(
-        CapHealthPermission.READ_STEPS to HealthPermission.getReadPermission(StepsRecord::class),
-        CapHealthPermission.READ_HEART_RATE to HealthPermission.getReadPermission(HeartRateRecord::class),
-        CapHealthPermission.READ_WEIGHT to HealthPermission.getReadPermission(WeightRecord::class),
-        CapHealthPermission.READ_ACTIVE_CALORIES to HealthPermission.getReadPermission(ActiveCaloriesBurnedRecord::class),
-        CapHealthPermission.READ_TOTAL_CALORIES to HealthPermission.getReadPermission(TotalCaloriesBurnedRecord::class),
-        CapHealthPermission.READ_DISTANCE to HealthPermission.getReadPermission(DistanceRecord::class),
-        CapHealthPermission.READ_WORKOUTS to HealthPermission.getReadPermission(ExerciseSessionRecord::class)
-    )
-
-    // Helper to ensure client is initialized
+    // Helper to ensure HealthConnectClient is ready; attempts init lazily
     private fun ensureClientInitialized(call: PluginCall): Boolean {
-        if (!available) {
-            call.reject("Health Connect client not initialized. Call isHealthAvailable() first.")
-            return false
+        if (available) return true
+
+        return try {
+            healthConnectClient = HealthConnectClient.getOrCreate(context)
+            available = true
+            true
+        } catch (e: Exception) {
+            Log.e(tag, "Failed to initialise HealthConnectClient", e)
+            call.reject("Health Connect is not available on this device.")
+            false
         }
-        return true
     }
 
     // Check if a set of permissions are granted
@@ -145,16 +183,19 @@ class HealthPlugin : Plugin() {
         }
     }
 
-    private fun grantedPermissionResult(requestPermissions: Set<CapHealthPermission>, grantedPermissions: Set<String>): JSObject {
-        // The grantedPermissions Set<String> contains the HealthPermission strings directly.
+    private fun grantedPermissionResult(
+        requestPermissions: Set<CapHealthPermission>,
+        grantedPermissions: Set<String>
+    ): JSObject {
         val readPermissions = JSObject()
         for (permission in requestPermissions) {
-            val mappedPermission = permissionMapping[permission]
-            readPermissions.put(permission.name, mappedPermission in grantedPermissions)
+            val hp = permissionMapping[permission]!!
+            // Check by object equality
+            readPermissions.put(permission.name, grantedPermissions.contains(hp))
         }
-        val result = JSObject()
-        result.put("permissions", readPermissions)
-        return result
+        return JSObject().apply {
+            put("permissions", readPermissions)
+        }
     }
 
     data class RequestPermissionContext(val requestedPermissions: Set<CapHealthPermission>, val pluginCal: PluginCall)
@@ -165,28 +206,33 @@ class HealthPlugin : Plugin() {
     @PluginMethod
     fun requestHealthPermissions(call: PluginCall) {
         if (!ensureClientInitialized(call)) return
-        val permArray = call.getArray("permissions") ?: return call.reject("Must provide permissions to request")
-        val requestedCaps = permArray.toList<String>().mapNotNull { CapHealthPermission.from(it) }.toSet()
-        val hcPermissions = requestedCaps.mapNotNull { permissionMapping[it] }.toSet()
-        if (hcPermissions.isEmpty()) return call.reject("No valid permissions to request")
+        val requestedCaps = call.getArray("permissions")
+            ?.toList<String>()
+            ?.mapNotNull { CapHealthPermission.from(it) }
+            ?.toSet() ?: return call.reject("Provide permissions array.")
+
+        val hcPermissions: Set<String> = requestedCaps
+            .mapNotNull { permissionMapping[it] }
+            .toSet()
+
+        if (hcPermissions.isEmpty()) {
+            return call.reject("No valid Health Connect permissions.")
+        }
 
         requestPermissionContext.set(RequestPermissionContext(requestedCaps, call))
 
-        // Show rationale screen if available
-        val rationaleIntent = Intent("androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE").apply {
-            setPackage("com.google.android.apps.healthdata")
-        }
-        if (rationaleIntent.resolveActivity(context.packageManager) != null) {
-            try { context.startActivity(rationaleIntent) }
-            catch (e: Exception) { Log.e(tag, "Rationale launch failed", e) }
-        } else {
-            Log.w(tag, "Health Connect rationale screen not found")
+        // Show rationale if available
+        context.packageManager?.let { pm ->
+            Intent("androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE").apply {
+                setPackage("com.google.android.apps.healthdata")
+            }.takeIf { pm.resolveActivity(it, 0) != null }
+                ?.also { context.startActivity(it) }
+                ?: Log.w(tag, "Health Connect rationale screen not found")
         }
 
-        // Only launch once on main thread
         CoroutineScope(Dispatchers.Main).launch {
-            Log.i(tag, "Launching permission request for: $hcPermissions")
             permissionsLauncher.launch(hcPermissions)
+            Log.i(tag, "Launched Health Connect permission request: $hcPermissions")
         }
     }
 
@@ -204,6 +250,12 @@ class HealthPlugin : Plugin() {
         }
     }
 
+    // Alias for iOS compatibility
+    @PluginMethod
+    fun openAppleHealthSettings(call: PluginCall) {
+        openHealthConnectSettings(call)
+    }
+
     // Open the Google Play Store to install Health Connect
     @PluginMethod
     fun showHealthConnectInPlayStore(call: PluginCall) {
@@ -218,7 +270,7 @@ class HealthPlugin : Plugin() {
     private fun getMetricAndMapper(dataType: String): MetricAndMapper {
         return when (dataType) {
             "steps" -> metricAndMapper("steps", CapHealthPermission.READ_STEPS, StepsRecord.COUNT_TOTAL) { it?.toDouble() }
-            "active-calories" -> metricAndMapper(
+            "active-calories", "activeCalories" -> metricAndMapper(
                 "calories",
                 CapHealthPermission.READ_ACTIVE_CALORIES,
                 ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL
@@ -241,24 +293,52 @@ class HealthPlugin : Plugin() {
             call.reject("Missing required parameter: dataType")
             return
         }
+        queryLatestSampleInternal(call, dataType)
+    }
 
+    private fun queryLatestSampleInternal(call: PluginCall, dataType: String) {
+        if (!ensureClientInitialized(call)) return
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val result = when (dataType) {
-                    "heart-rate" -> readLatestHeartRate()
+                    "heart-rate", "heartRate" -> readLatestHeartRate()
                     "weight" -> readLatestWeight()
+                    "height" -> readLatestHeight()
                     "steps" -> readLatestSteps()
-                    else -> {
-                        call.reject("Unsupported data type: $dataType")
-                        return@launch
-                    }
+                    "hrv" -> readLatestHrv()
+                    "blood-pressure" -> readLatestBloodPressure()
+                    "distance" -> readLatestDistance()
+                    "active-calories" -> readLatestActiveCalories()
+                    "total-calories" -> readLatestTotalCalories()
+                    else -> throw IllegalArgumentException("Unsupported data type: $dataType")
                 }
                 call.resolve(result)
             } catch (e: Exception) {
-                Log.e(tag, "queryLatestSample: Error fetching latest heart-rate", e)
+                Log.e(tag, "queryLatestSampleInternal: Error fetching latest $dataType", e)
                 call.reject("Error fetching latest $dataType: ${e.message}")
             }
         }
+    }
+
+    // Convenience methods for specific data types
+    @PluginMethod
+    fun queryWeight(call: PluginCall) {
+        queryLatestSampleInternal(call, "weight")
+    }
+
+    @PluginMethod
+    fun queryHeight(call: PluginCall) {
+        queryLatestSampleInternal(call, "height")
+    }
+
+    @PluginMethod
+    fun queryHeartRate(call: PluginCall) {
+        queryLatestSampleInternal(call, "heart-rate")
+    }
+
+    @PluginMethod
+    fun querySteps(call: PluginCall) {
+        queryLatestSampleInternal(call, "steps")
     }
 
     private suspend fun readLatestHeartRate(): JSObject {
@@ -275,8 +355,9 @@ class HealthPlugin : Plugin() {
 
         val lastSample = record.samples.lastOrNull()
         return JSObject().apply {
-            put("timestamp", lastSample?.time?.toString() ?: "")
             put("value", lastSample?.beatsPerMinute ?: 0)
+            put("timestamp", (lastSample?.time?.epochSecond ?: 0) * 1000) // Convert to milliseconds like iOS
+            put("unit", "count/min")
         }
     }
 
@@ -289,11 +370,12 @@ class HealthPlugin : Plugin() {
             timeRangeFilter = TimeRangeFilter.after(Instant.EPOCH),
             pageSize = 1
         )
-        val result = healthConnectClient.readRecords(request)
-        val record = result.records.firstOrNull() ?: throw Exception("No weight data found")
+        val record = healthConnectClient.readRecords(request).records.firstOrNull()
+
         return JSObject().apply {
-            put("timestamp", record.time.toString())
-            put("value", record.weight.inKilograms)
+            put("value", record?.weight?.inKilograms ?: 0)
+            put("timestamp", (record?.time?.epochSecond ?: 0) * 1000)
+            put("unit", "kg")
         }
     }
 
@@ -306,12 +388,117 @@ class HealthPlugin : Plugin() {
             timeRangeFilter = TimeRangeFilter.after(Instant.EPOCH),
             pageSize = 1
         )
-        val result = healthConnectClient.readRecords(request)
-        val record = result.records.firstOrNull() ?: throw Exception("No step data found")
+        val record = healthConnectClient.readRecords(request).records.firstOrNull()
         return JSObject().apply {
-            put("startDate", record.startTime.toString())
-            put("endDate", record.endTime.toString())
-            put("value", record.count)
+            put("value", record?.count ?: 0)
+            put("timestamp", (record?.endTime?.epochSecond ?: 0) * 1000)
+            put("unit", "count")
+        }
+    }
+
+    private suspend fun readLatestHrv(): JSObject {
+        if (!hasPermission(CapHealthPermission.READ_HRV)) {
+            throw Exception("Permission for HRV not granted")
+        }
+        val request = ReadRecordsRequest(
+            recordType = HeartRateVariabilityRmssdRecord::class,
+            timeRangeFilter = TimeRangeFilter.after(Instant.EPOCH),
+            pageSize = 1
+        )
+        val record = healthConnectClient.readRecords(request).records.firstOrNull()
+
+        return JSObject().apply {
+            put("value", record?.heartRateVariabilityMillis ?: 0)
+            put("timestamp", (record?.time?.epochSecond ?: 0) * 1000)
+            put("unit", "ms")
+        }
+    }
+
+    private suspend fun readLatestBloodPressure(): JSObject {
+        if (!hasPermission(CapHealthPermission.READ_BLOOD_PRESSURE)) {
+            throw Exception("Permission for blood pressure not granted")
+        }
+        val request = ReadRecordsRequest(
+            recordType = BloodPressureRecord::class,
+            timeRangeFilter = TimeRangeFilter.after(Instant.EPOCH),
+            pageSize = 1
+        )
+        val record = healthConnectClient.readRecords(request).records.firstOrNull()
+
+        return JSObject().apply {
+            put("systolic", record?.systolic?.inMillimetersOfMercury ?: 0)
+            put("diastolic", record?.diastolic?.inMillimetersOfMercury ?: 0)
+            put("timestamp", (record?.time?.epochSecond ?: 0) * 1000)
+            put("unit", "mmHg")
+        }
+    }
+
+    private suspend fun readLatestHeight(): JSObject {
+        if (!hasPermission(CapHealthPermission.READ_HEIGHT)) {
+            throw Exception("Permission for height not granted")
+        }
+        val request = ReadRecordsRequest(
+            recordType = HeightRecord::class,
+            timeRangeFilter = TimeRangeFilter.after(Instant.EPOCH),
+            pageSize = 1
+        )
+        val record = healthConnectClient.readRecords(request).records.firstOrNull()
+
+        return JSObject().apply {
+            put("value", record?.height?.inMeters ?: 0)
+            put("timestamp", (record?.time?.epochSecond ?: 0) * 1000)
+            put("unit", "m")
+        }
+    }
+
+    private suspend fun readLatestDistance(): JSObject {
+        if (!hasPermission(CapHealthPermission.READ_DISTANCE)) {
+            throw Exception("Permission for distance not granted")
+        }
+        val request = ReadRecordsRequest(
+            recordType = DistanceRecord::class,
+            timeRangeFilter = TimeRangeFilter.after(Instant.EPOCH),
+            pageSize = 1
+        )
+        val record = healthConnectClient.readRecords(request).records.firstOrNull()
+        return JSObject().apply {
+            put("value", record?.distance?.inMeters ?: 0)
+            put("timestamp", (record?.endTime?.epochSecond ?: 0) * 1000)
+            put("unit", "m")
+        }
+    }
+
+    private suspend fun readLatestActiveCalories(): JSObject {
+        if (!hasPermission(CapHealthPermission.READ_ACTIVE_CALORIES)) {
+            throw Exception("Permission for active calories not granted")
+        }
+        val request = ReadRecordsRequest(
+            recordType = ActiveCaloriesBurnedRecord::class,
+            timeRangeFilter = TimeRangeFilter.after(Instant.EPOCH),
+            pageSize = 1
+        )
+        val record = healthConnectClient.readRecords(request).records.firstOrNull()
+        return JSObject().apply {
+            put("value", record?.energy?.inKilocalories ?: 0)
+            put("timestamp", (record?.endTime?.epochSecond ?: 0) * 1000)
+            put("unit", "kcal")
+        }
+    }
+
+    private suspend fun readLatestTotalCalories(): JSObject {
+        if (!hasPermission(CapHealthPermission.READ_TOTAL_CALORIES)) {
+            throw Exception("Permission for total calories not granted")
+        }
+        val request = ReadRecordsRequest(
+            recordType = TotalCaloriesBurnedRecord::class,
+            timeRangeFilter = TimeRangeFilter.after(Instant.EPOCH),
+            pageSize = 1
+        )
+        val record = healthConnectClient.readRecords(request).records.firstOrNull()
+        return JSObject().apply {
+            put("value", record?.energy?.inKilocalories ?: 0)
+            put("timestamp", (record?.endTime?.epochSecond ?: 0) * 1000)
+            put("unit", "kcal")
         }
     }
 
@@ -332,16 +519,41 @@ class HealthPlugin : Plugin() {
             val startDateTime = Instant.parse(startDate).atZone(ZoneId.systemDefault()).toLocalDateTime()
             val endDateTime = Instant.parse(endDate).atZone(ZoneId.systemDefault()).toLocalDateTime()
 
-            val metricAndMapper = getMetricAndMapper(dataType)
-
             val period = when (bucket) {
                 "day" -> Period.ofDays(1)
                 else -> throw RuntimeException("Unsupported bucket: $bucket")
             }
 
+            // Special handling for HRV (RMSSD) because aggregate metrics were
+            // removed in Health Connect 1.1‑rc03. We calculate the daily average
+            // from raw samples instead.
+            if (dataType == "hrv") {
+                CoroutineScope(Dispatchers.IO).launch {
+                    try {
+                        val hrvSamples = aggregateHrvByPeriod(
+                            TimeRangeFilter.between(startDateTime, endDateTime),
+                            period
+                        )
+                        val aggregatedList = JSArray()
+                        hrvSamples.forEach { aggregatedList.put(it.toJs()) }
+                        val finalResult = JSObject()
+                        finalResult.put("aggregatedData", aggregatedList)
+                        call.resolve(finalResult)
+                    } catch (e: Exception) {
+                        call.reject("Error querying aggregated HRV data: ${e.message}")
+                    }
+                }
+                return  // skip the normal aggregate path
+            }
+
             CoroutineScope(Dispatchers.IO).launch {
                 try {
-                    val r = queryAggregatedMetric(metricAndMapper, TimeRangeFilter.between(startDateTime, endDateTime), period)
+                    val metricAndMapper = getMetricAndMapper(dataType)
+                    val r = queryAggregatedMetric(
+                        metricAndMapper,
+                        TimeRangeFilter.between(startDateTime, endDateTime),
+                        period
+                    )
                     val aggregatedList = JSArray()
                     r.forEach { aggregatedList.put(it.toJs()) }
                     val finalResult = JSObject()
@@ -407,10 +619,44 @@ class HealthPlugin : Plugin() {
         )
 
         return response.map {
-            val mappedValue = metricAndMapper.getValue(it.result)
+            val mappedValue = metricAndMapper.getValue(it.result) ?: 0.0
             AggregatedSample(it.startTime, it.endTime, mappedValue)
         }
 
+    }
+
+    private suspend fun aggregateHrvByPeriod(
+        timeRange: TimeRangeFilter,
+        period: Period
+    ): List<AggregatedSample> {
+        if (!hasPermission(CapHealthPermission.READ_HRV)) {
+            return emptyList()
+        }
+
+        // Currently only daily buckets are supported.
+        if (period != Period.ofDays(1)) {
+            throw RuntimeException("Unsupported bucket for HRV aggregation")
+        }
+
+        val response = healthConnectClient.readRecords(
+            ReadRecordsRequest(
+                recordType = HeartRateVariabilityRmssdRecord::class,
+                timeRangeFilter = timeRange
+            )
+        )
+
+        // Group raw RMSSD samples by local date and compute the arithmetic mean.
+        return response.records
+            .groupBy { it.time.atZone(ZoneId.systemDefault()).toLocalDate() }
+            .map { (localDate, recs) ->
+                val avg = recs.map { it.heartRateVariabilityMillis }.average()
+                AggregatedSample(
+                    localDate.atStartOfDay(),
+                    localDate.plusDays(1).atStartOfDay(),
+                    if (avg.isNaN()) null else avg
+                )
+            }
+            .sortedBy { it.startDate }
     }
 
     private suspend fun hasPermission(p: CapHealthPermission): Boolean {
@@ -418,7 +664,6 @@ class HealthPlugin : Plugin() {
         val targetPermission = permissionMapping[p]
         return granted.contains(targetPermission)
     }
-
 
     @PluginMethod
     fun queryWorkouts(call: PluginCall) {

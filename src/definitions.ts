@@ -57,10 +57,30 @@ export interface HealthPlugin {
   queryWorkouts(request: QueryWorkoutRequest): Promise<QueryWorkoutResponse>;
 
   /**
-   * Query the latest single sample for the provided data type
-   * @param options options containing the data type to query
+   * Query latest sample for a specific data type
+   * @param request
    */
-  queryLatestSample(options: LatestSampleRequest): Promise<LatestSampleResponse>;
+  queryLatestSample(request: { dataType: string }): Promise<QueryLatestSampleResponse>;
+
+  /**
+   * Query latest weight sample
+   */
+  queryWeight(): Promise<QueryLatestSampleResponse>;
+
+  /**
+   * Query latest height sample
+   */
+  queryHeight(): Promise<QueryLatestSampleResponse>;
+
+  /**
+   * Query latest heart rate sample
+   */
+  queryHeartRate(): Promise<QueryLatestSampleResponse>;
+
+  /**
+   * Query latest steps sample
+   */
+  querySteps(): Promise<QueryLatestSampleResponse>;
 }
 
 export declare type HealthPermission =
@@ -70,9 +90,12 @@ export declare type HealthPermission =
   | 'READ_TOTAL_CALORIES'
   | 'READ_DISTANCE'
   | 'READ_WEIGHT'
+  | 'READ_HEIGHT'
   | 'READ_HEART_RATE'
   | 'READ_ROUTE'
-  | 'READ_MINDFULNESS';
+  | 'READ_MINDFULNESS'
+  | 'READ_HRV'
+  | 'READ_BLOOD_PRESSURE';
 
 export interface PermissionsRequest {
   permissions: HealthPermission[];
@@ -124,7 +147,7 @@ export interface Workout {
 export interface QueryAggregatedRequest {
   startDate: string;
   endDate: string;
-  dataType: 'steps' | 'active-calories' | 'mindfulness';
+  dataType: 'steps' | 'active-calories' | 'mindfulness' | 'hrv' | 'blood-pressure';
   bucket: string;
 }
 
@@ -138,14 +161,10 @@ export interface AggregatedSample {
   value: number;
 }
 
-export interface LatestSampleRequest {
-  dataType: 'heart-rate' | 'weight' | 'steps';
-}
-
-export interface LatestSampleResponse {
-  value: number;
-  timestamp?: string;
-  startDate?: string;
-  endDate?: string;
-  unit?: string;
+export interface QueryLatestSampleResponse {
+  value?: number;
+  systolic?: number;
+  diastolic?: number;
+  timestamp: number;
+  unit: string;
 }
