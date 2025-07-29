@@ -83,7 +83,7 @@ class HealthPlugin : Plugin() {
         CapHealthPermission.READ_TOTAL_CALORIES to HealthPermission.getReadPermission(TotalCaloriesBurnedRecord::class),
         CapHealthPermission.READ_DISTANCE to HealthPermission.getReadPermission(DistanceRecord::class),
         CapHealthPermission.READ_WORKOUTS to HealthPermission.getReadPermission(ExerciseSessionRecord::class),
-        CapHealthPermission.READ_HRV to HealthPermission.getReadPermission(HeartRateVariabilitySdnnRecord::class),
+        CapHealthPermission.READ_HRV to HealthPermission.getReadPermission(HeartRateVariabilityRmssdRecord::class),
         CapHealthPermission.READ_BLOOD_PRESSURE to HealthPermission.getReadPermission(BloodPressureRecord::class),
         CapHealthPermission.READ_ROUTE to HealthPermission.getReadPermission(ExerciseSessionRecord::class),
         CapHealthPermission.READ_MINDFULNESS to HealthPermission.getReadPermission(SleepSessionRecord::class)
@@ -275,7 +275,6 @@ class HealthPlugin : Plugin() {
                 TotalCaloriesBurnedRecord.ENERGY_TOTAL
             ) { it?.inKilocalories }
             "distance" -> metricAndMapper("distance", CapHealthPermission.READ_DISTANCE, DistanceRecord.DISTANCE_TOTAL) { it?.inMeters }
-            "hrv" -> metricAndMapper("hrv", CapHealthPermission.READ_HRV, HeartRateVariabilitySdnnRecord.SDNN_AVG) { it }
             else -> throw RuntimeException("Unsupported dataType: $dataType")
         }
     }
@@ -288,7 +287,11 @@ class HealthPlugin : Plugin() {
             call.reject("Missing required parameter: dataType")
             return
         }
+        queryLatestSampleInternal(call, dataType)
+    }
 
+    private fun queryLatestSampleInternal(call: PluginCall, dataType: String) {
+        if (!ensureClientInitialized(call)) return
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val result = when (dataType) {
@@ -301,14 +304,11 @@ class HealthPlugin : Plugin() {
                     "distance" -> readLatestDistance()
                     "active-calories" -> readLatestActiveCalories()
                     "total-calories" -> readLatestTotalCalories()
-                    else -> {
-                        call.reject("Unsupported data type: $dataType")
-                        return@launch
-                    }
+                    else -> throw IllegalArgumentException("Unsupported data type: $dataType")
                 }
                 call.resolve(result)
             } catch (e: Exception) {
-                Log.e(tag, "queryLatestSample: Error fetching latest $dataType", e)
+                Log.e(tag, "queryLatestSampleInternal: Error fetching latest $dataType", e)
                 call.reject("Error fetching latest $dataType: ${e.message}")
             }
         }
@@ -317,26 +317,22 @@ class HealthPlugin : Plugin() {
     // Convenience methods for specific data types
     @PluginMethod
     fun queryWeight(call: PluginCall) {
-        call.put("dataType", "weight")
-        queryLatestSample(call)
+        queryLatestSampleInternal(call, "weight")
     }
 
     @PluginMethod
     fun queryHeight(call: PluginCall) {
-        call.put("dataType", "height")
-        queryLatestSample(call)
+        queryLatestSampleInternal(call, "height")
     }
 
     @PluginMethod
     fun queryHeartRate(call: PluginCall) {
-        call.put("dataType", "heart-rate")
-        queryLatestSample(call)
+        queryLatestSampleInternal(call, "heart-rate")
     }
 
     @PluginMethod
     fun querySteps(call: PluginCall) {
-        call.put("dataType", "steps")
-        queryLatestSample(call)
+        queryLatestSampleInternal(call, "steps")
     }
 
     private suspend fun readLatestHeartRate(): JSObject {
@@ -400,14 +396,14 @@ class HealthPlugin : Plugin() {
             throw Exception("Permission for HRV not granted")
         }
         val request = ReadRecordsRequest(
-            recordType = HeartRateVariabilitySdnnRecord::class,
+            recordType = HeartRateVariabilityRmssdRecord::class,
             timeRangeFilter = TimeRangeFilter.after(Instant.EPOCH),
             pageSize = 1
         )
         val result = healthConnectClient.readRecords(request)
         val record = result.records.firstOrNull() ?: throw Exception("No HRV data found")
         return JSObject().apply {
-            put("value", record.sdnnMillis)
+            put("value", record.heartRateVariabilityMillis)
             put("timestamp", record.time.epochSecond * 1000) // Convert to milliseconds like iOS
             put("unit", "ms")
         }
@@ -463,7 +459,7 @@ class HealthPlugin : Plugin() {
         val record = result.records.firstOrNull() ?: throw Exception("No distance data found")
         return JSObject().apply {
             put("value", record.distance.inMeters)
-            put("timestamp", record.time.epochSecond * 1000) // Convert to milliseconds like iOS
+            put("timestamp", record.endTime.epochSecond * 1000) // Convert to milliseconds like iOS
             put("unit", "m")
         }
     }
@@ -480,8 +476,8 @@ class HealthPlugin : Plugin() {
         val result = healthConnectClient.readRecords(request)
         val record = result.records.firstOrNull() ?: throw Exception("No active calories data found")
         return JSObject().apply {
-            put("value", record.activeCalories.inKilocalories)
-            put("timestamp", record.time.epochSecond * 1000) // Convert to milliseconds like iOS
+            put("value", record.energy.inKilocalories)
+            put("timestamp", record.endTime.epochSecond * 1000) // Convert to milliseconds like iOS
             put("unit", "kcal")
         }
     }
@@ -499,7 +495,7 @@ class HealthPlugin : Plugin() {
         val record = result.records.firstOrNull() ?: throw Exception("No total calories data found")
         return JSObject().apply {
             put("value", record.energy.inKilocalories)
-            put("timestamp", record.time.epochSecond * 1000) // Convert to milliseconds like iOS
+            put("timestamp", record.endTime.epochSecond * 1000) // Convert to milliseconds like iOS
             put("unit", "kcal")
         }
     }
@@ -521,16 +517,41 @@ class HealthPlugin : Plugin() {
             val startDateTime = Instant.parse(startDate).atZone(ZoneId.systemDefault()).toLocalDateTime()
             val endDateTime = Instant.parse(endDate).atZone(ZoneId.systemDefault()).toLocalDateTime()
 
-            val metricAndMapper = getMetricAndMapper(dataType)
-
             val period = when (bucket) {
                 "day" -> Period.ofDays(1)
                 else -> throw RuntimeException("Unsupported bucket: $bucket")
             }
 
+            // Special handling for HRV (RMSSD) because aggregate metrics were
+            // removed in Health Connect 1.1‑rc03. We calculate the daily average
+            // from raw samples instead.
+            if (dataType == "hrv") {
+                CoroutineScope(Dispatchers.IO).launch {
+                    try {
+                        val hrvSamples = aggregateHrvByPeriod(
+                            TimeRangeFilter.between(startDateTime, endDateTime),
+                            period
+                        )
+                        val aggregatedList = JSArray()
+                        hrvSamples.forEach { aggregatedList.put(it.toJs()) }
+                        val finalResult = JSObject()
+                        finalResult.put("aggregatedData", aggregatedList)
+                        call.resolve(finalResult)
+                    } catch (e: Exception) {
+                        call.reject("Error querying aggregated HRV data: ${e.message}")
+                    }
+                }
+                return  // skip the normal aggregate path
+            }
+
             CoroutineScope(Dispatchers.IO).launch {
                 try {
-                    val r = queryAggregatedMetric(metricAndMapper, TimeRangeFilter.between(startDateTime, endDateTime), period)
+                    val metricAndMapper = getMetricAndMapper(dataType)
+                    val r = queryAggregatedMetric(
+                        metricAndMapper,
+                        TimeRangeFilter.between(startDateTime, endDateTime),
+                        period
+                    )
                     val aggregatedList = JSArray()
                     r.forEach { aggregatedList.put(it.toJs()) }
                     val finalResult = JSObject()
@@ -600,6 +621,40 @@ class HealthPlugin : Plugin() {
             AggregatedSample(it.startTime, it.endTime, mappedValue)
         }
 
+    }
+
+    private suspend fun aggregateHrvByPeriod(
+        timeRange: TimeRangeFilter,
+        period: Period
+    ): List<AggregatedSample> {
+        if (!hasPermission(CapHealthPermission.READ_HRV)) {
+            return emptyList()
+        }
+
+        // Currently only daily buckets are supported.
+        if (period != Period.ofDays(1)) {
+            throw RuntimeException("Unsupported bucket for HRV aggregation")
+        }
+
+        val response = healthConnectClient.readRecords(
+            ReadRecordsRequest(
+                recordType = HeartRateVariabilityRmssdRecord::class,
+                timeRangeFilter = timeRange
+            )
+        )
+
+        // Group raw RMSSD samples by local date and compute the arithmetic mean.
+        return response.records
+            .groupBy { it.time.atZone(ZoneId.systemDefault()).toLocalDate() }
+            .map { (localDate, recs) ->
+                val avg = recs.map { it.heartRateVariabilityMillis }.average()
+                AggregatedSample(
+                    localDate.atStartOfDay(),
+                    localDate.plusDays(1).atStartOfDay(),
+                    if (avg.isNaN()) null else avg
+                )
+            }
+            .sortedBy { it.startDate }
     }
 
     private suspend fun hasPermission(p: CapHealthPermission): Boolean {
