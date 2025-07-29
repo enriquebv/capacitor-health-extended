@@ -663,7 +663,6 @@ class HealthPlugin : Plugin() {
         return granted.contains(targetPermission)
     }
 
-
     @PluginMethod
     fun queryWorkouts(call: PluginCall) {
         if (!ensureClientInitialized(call)) return
