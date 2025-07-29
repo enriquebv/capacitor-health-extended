@@ -12,9 +12,9 @@ Pod::Spec.new do |s|
   s.source = { :git => package['repository']['url'], :tag => s.version.to_s }
   # Only include Swift/Obj-C source files that belong to the plugin
   s.source_files = 'ios/Sources/HealthPluginPlugin/**/*.{swift,h,m}'
-  s.ios.deployment_target  = '13.0'
-  s.dependency 'Capacitor',        '~> 6.2'
-  s.dependency 'CapacitorCordova', '~> 6.2'
-  # Match the Swift shipped with Xcode 16 (use 5.9 for Xcode 15.x)
-  s.swift_version = '5.9'
+  s.ios.deployment_target  = '14.0'
+  s.dependency 'Capacitor',        '~> 7.0'
+  s.dependency 'CapacitorCordova', '~> 7.0'
+  # Match the Swift shipped with Xcode 16
+  s.swift_version = '5.10'
 end
