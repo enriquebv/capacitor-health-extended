@@ -1,10 +1,25 @@
-# capacitor-health
+# capacitor-health-extended
 
-Capacitor plugin to query data from Apple Health and Google Health Connect
+Cross‑platform Capacitor plugin for reading data from Apple HealthKit and
+Google Health Connect. The plugin requires **Node.js 20+** and is compatible
+with **Capacitor 7**.
 
 ## Thanks and attribution
 
 Some parts, concepts and ideas are borrowed from [cordova-plugin-health](https://github.com/dariosalvi78/cordova-plugin-health/). Big thanks to [@dariosalvi78](https://github.com/dariosalvi78) for the support.
+
+## Requirements
+
+- Node.js 20 or newer
+- Capacitor 7
+
+## Features
+
+- Check if health functionality is available on the device
+- Request and verify health permissions
+- Query aggregated data like steps or calories
+- Retrieve workout sessions with optional route and heart rate data
+- Fetch the latest sample for steps, heart‑rate, or weight
 
 ## Install
 
@@ -76,6 +91,10 @@ npx cap sync
 * [`queryAggregated(...)`](#queryaggregated)
 * [`queryWorkouts(...)`](#queryworkouts)
 * [`queryLatestSample(...)`](#querylatestsample)
+* [`queryWeight()`](#queryweight)
+* [`queryHeight()`](#queryheight)
+* [`queryHeartRate()`](#queryheartrate)
+* [`querySteps()`](#querysteps)
 * [Interfaces](#interfaces)
 * [Type Aliases](#type-aliases)
 
